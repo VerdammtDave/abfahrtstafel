@@ -29,6 +29,7 @@ Updates: `git pull && sudo ./install.sh`. `config.json` und `data.json` (Favorit
 | `/wiederkehrend` | wiederkehrende Fahrten (z. B. Mo–Fr 7:00), antippen zum Löschen |
 | `/jetzt` | aktuelle Verspätungen an deinen Favoriten |
 | `/pause`, `/weiter` | Benachrichtigungen aus/an |
+| `/clear` | Chatverlauf löschen (Telegram erlaubt nur Nachrichten der letzten 48 Stunden). Favoriten und Tracking bleiben |
 | `/status` | Einstellungen und Zeit der letzten Prüfung |
 
 Favoriten sind nur eine Liste für den schnellen Zugriff und melden nichts von selbst.

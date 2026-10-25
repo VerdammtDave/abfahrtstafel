@@ -419,6 +419,7 @@ HELP = (
     "/mitglieder \u2013 eingeladene Personen ansehen und entfernen\n"
     "/jetzt \u2013 aktuelle Versp\u00e4tungen an deinen Favoriten\n"
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
+    "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
     "/status \u2013 Einstellungen anzeigen\n\n"
     "Tracking: In einer Abfahrtsliste eine Fahrt antippen. Du bekommst sofort den Stand, danach jede \u00c4nderung "
     "um 2 min sowie eine Erinnerung 15 und 5 min vor Abfahrt."
@@ -638,13 +639,14 @@ def cmd_schwelle(cid, arg):
     send(cid, f"Ich melde mich ab {arg} min Versp\u00e4tung.")
 
 
-GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status"}
+GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status", "/clear"}
 GUEST_ACTIONS = {"tw", "tr", "ud", "sh", "sr", "sf"}
 GUEST_HELP = (
     "Abfahrts-Bot \u2013 du hast Zugriff auf geteilte Verbindungen.\n\n"
     "/code CODE \u2013 geteilte Verbindung ansehen und verfolgen\n"
     "/tracking \u2013 deine verfolgten Fahrten\n"
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
+    "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
     "/status \u2013 Einstellungen anzeigen"
 )
 
@@ -718,6 +720,33 @@ def cmd_help(cid):
     send(cid, HELP if is_admin(cid) else GUEST_HELP)
 
 
+CLEAR_BATCH = 100                  # deleteMessages nimmt höchstens 100 Nachrichten auf einmal
+CLEAR_MAX_BATCHES = 20             # also bis zu 2000 Nachrichten pro Aufruf
+
+
+def cmd_clear(cid, mid):
+    """Chatverlauf loeschen. Telegram erlaubt Bots nur Nachrichten der letzten 48 Stunden, aeltere bleiben stehen.
+    Favoriten, Tracking und Einstellungen bleiben erhalten."""
+    if not isinstance(mid, int) or mid < 1:
+        return
+    if not rate_ok(str(cid), "clear", 3, 60):
+        return send(cid, "Bitte warte einen Moment, bevor du den Chat erneut löschst.")
+    bis = mid
+    for _ in range(CLEAR_MAX_BATCHES):
+        ids = list(range(bis, max(bis - CLEAR_BATCH, 0), -1))
+        if not ids:
+            break
+        try:
+            tg("deleteMessages", chat_id=cid, message_ids=ids)   # nicht vorhandene oder zu alte Nachrichten werden uebersprungen
+        except Exception as e:
+            log("Chat löschen fehlgeschlagen:", e)
+            break
+        bis -= CLEAR_BATCH
+        time.sleep(0.3)
+    send(cid, "Chatverlauf gelöscht. Nachrichten, die älter als 48 Stunden sind, kann Telegram nicht entfernen. "
+              "Deine Favoriten und verfolgten Fahrten bleiben erhalten.")
+
+
 def cmd_pause(cid, paused):
     with lock:
         get_chat(cid)["paused"] = paused
@@ -767,6 +796,7 @@ def handle_message(m):
         "/pause": lambda: cmd_pause(cid, True),
         "/weiter": lambda: cmd_pause(cid, False),
         "/status": lambda: cmd_status(cid),
+        "/clear": lambda: cmd_clear(cid, m.get("message_id")),
     }.get(cmd, lambda: send(cid, "Unbekannter Befehl. /hilfe"))()
 
 
@@ -1742,6 +1772,7 @@ def main():
         {"command": "mitglieder", "description": "Eingeladene Personen verwalten"},
         {"command": "pause", "description": "Benachrichtigungen aus"},
         {"command": "weiter", "description": "Benachrichtigungen an"},
+        {"command": "clear", "description": "Chatverlauf löschen"},
         {"command": "status", "description": "Einstellungen"},
     ])
     if cfg["api_port"]:

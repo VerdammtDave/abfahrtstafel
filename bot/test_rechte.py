@@ -226,6 +226,34 @@ def test_keine_geheimnisse_in_texten():
     pruefe(HIER not in alles, "ein Dateipfad erscheint in einer Nachricht")
 
 
+def test_clear_befehl():
+    neu()
+    for wer in (BESITZER, VERWALTER, MITGLIED, GAST):
+        pruefe(bot.may_use(wer, cmd="/clear"), f"/clear ist fuer {wer} nicht erlaubt")
+    pruefe(not bot.may_use(FREMD, cmd="/clear"), "Fremde duerfen /clear nutzen")
+    aufrufe, nachrichten = [], []
+    bot.tg = lambda methode, **p: aufrufe.append((methode, p))
+    bot.send = lambda cid, text, **k: nachrichten.append(text)
+    bot.time.sleep = lambda s: None
+    bot.rate_hits.clear()
+    bot.data["chats"][str(BESITZER)] = {"favs": [{"sid": "a"}], "trips": [{"key": "k"}], "routines": [], "paused": False}
+    bot.cmd_clear(BESITZER, 250)
+    ids = [i for _, p in aufrufe for i in p["message_ids"]]
+    pruefe(all(m == "deleteMessages" for m, _ in aufrufe), "/clear nutzt etwas anderes als deleteMessages")
+    pruefe(all(len(p["message_ids"]) <= 100 for _, p in aufrufe), "ein Batch hat mehr als 100 Nachrichten")
+    pruefe(all(p["chat_id"] == BESITZER for _, p in aufrufe), "/clear loescht in einem fremden Chat")
+    pruefe(sorted(ids) == list(range(1, 251)), "die Nachrichten 1 bis 250 werden nicht alle erfasst")
+    pruefe(bot.data["chats"][str(BESITZER)]["favs"] and bot.data["chats"][str(BESITZER)]["trips"], "/clear loescht Favoriten oder Tracking")
+    pruefe(nachrichten and "48" in nachrichten[-1], "/clear weist nicht auf die 48-Stunden-Grenze hin")
+    bot.cmd_clear(BESITZER, None)
+    bot.cmd_clear(BESITZER, 0)
+    bot.cmd_clear(BESITZER, "5")
+    pruefe(len(aufrufe) == 3, "/clear loescht bei ungueltiger Nachrichten-ID")
+    for _ in range(4):
+        bot.cmd_clear(MITGLIED, 10)
+    pruefe(sum(1 for _, p in aufrufe if p["chat_id"] == MITGLIED) == 3, "/clear ist nicht auf 3 Aufrufe pro Minute begrenzt")
+
+
 if __name__ == "__main__":
     for name, fn in sorted((n, f) for n, f in globals().items() if n.startswith("test_") and callable(f)):
         fn()
