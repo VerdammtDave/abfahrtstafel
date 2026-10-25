@@ -46,4 +46,5 @@ Details: [bot/README.md](bot/README.md), Betrieb hinter dem Heimrouter mit eigen
 
 ## Lizenz
 
-Noch festzulegen (z. B. MIT) vor dem Veröffentlichen.
+[MIT](LICENSE). Du darfst den Code frei nutzen, verändern und weitergeben.
+Die Abfahrtsdaten kommen von [Transitous](https://transitous.org); für sie gelten deren eigene Nutzungsbedingungen.
