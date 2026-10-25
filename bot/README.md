@@ -20,6 +20,10 @@ Updates: `git pull && sudo ./install.sh`. `config.json` und `data.json` (Favorit
 
 ## Bedienung
 
+Unter dem Eingabefeld erscheint ein Menü mit Tasten (nach `/start` oder `/hilfe`). Man muss die Befehle nicht tippen.
+Die Tasten hängen von der Rolle ab, es erscheinen nur Tasten, die man auch nutzen darf. Bei "Suche" und "Code eingeben" fragt der Bot nach dem Namen oder
+dem Code, die nächste Nachricht ist die Antwort (wartet 5 Minuten). Ein Befehl mit `/` bricht die Frage ab. Die Befehle unten funktionieren weiterhin.
+
 | Befehl | Wirkung |
 |---|---|
 | `/suche Bocholt Bahnhof` | Haltestelle suchen, per Tippen als Favorit speichern |

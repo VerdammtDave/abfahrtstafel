@@ -278,6 +278,92 @@ def test_einlader():
     pruefe("inviters" in bot.data and "verwalter" not in str(bot.data).lower(), "Rolle des Verwalters steht in data")
 
 
+def tasten(cid):
+    return [k["text"] for z in bot.menu_keyboard(cid)["keyboard"] for k in z]
+
+
+def test_menue_tasten_je_rolle():
+    neu()
+    befehle, _ = befehle_und_aktionen()
+    for text, cmd in bot.MENU_BUTTONS.items():
+        pruefe(cmd in befehle, f"Taste {text} gehoert zu einem unbekannten Befehl {cmd}")
+    einlader = MITGLIED + 1
+    bot.data["members"].append(einlader)
+    bot.data["inviters"].append(einlader)
+    rollen = {"Besitzer": BESITZER, "Verwalter": VERWALTER, "Mitglied": MITGLIED, "Einlader": einlader, "Gast": GAST, "Fremder": FREMD}
+    for name, cid in rollen.items():
+        for t in tasten(cid):
+            pruefe(t in bot.MENU_BUTTONS, f"{name}: unbekannte Taste {t}")
+            cmd = bot.MENU_BUTTONS.get(t)
+            erlaubt = t == "🎟 Code eingeben" or (t == "🔑 Einladen" and bot.can_invite(cid)) or                 (t != "🔑 Einladen" and bot.may_use(cid, cmd=cmd))
+            pruefe(erlaubt, f"{name} sieht die Taste {t}, darf den Befehl {cmd} aber nicht")
+    pruefe("👥 Mitglieder" in tasten(BESITZER) and "👥 Mitglieder" in tasten(VERWALTER), "Besitzer oder Verwalter sieht /mitglieder nicht")
+    pruefe("🔑 Einladen" in tasten(BESITZER) and "🔑 Einladen" in tasten(VERWALTER), "Besitzer oder Verwalter sieht Einladen nicht")
+    pruefe("👥 Mitglieder" not in tasten(MITGLIED) and "🔑 Einladen" not in tasten(MITGLIED), "normales Mitglied sieht Verwaltungstasten")
+    pruefe("🔑 Einladen" in tasten(einlader) and "👥 Mitglieder" not in tasten(einlader), "Einlader sieht falsche Tasten")
+    pruefe("🔍 Suche" not in tasten(GAST) and "⭐ Favoriten" not in tasten(GAST), "Gast sieht Tasten fuer Suche oder Favoriten")
+    pruefe(tasten(FREMD) == ["🎟 Code eingeben"], "Fremde sehen mehr als die Code-Taste")
+    pruefe(all(len(z) <= 3 for z in bot.menu_keyboard(BESITZER)["keyboard"]), "zu viele Tasten in einer Reihe")
+
+
+def test_menue_ablauf():
+    neu()
+    aufrufe, nachrichten = [], []
+    bot.send = lambda cid, text, **k: nachrichten.append((cid, str(text)))
+    bot.save = lambda: None
+    namen = ("cmd_favoriten", "cmd_suche", "cmd_code", "cmd_status", "cmd_mitglieder")
+    originale = {n: getattr(bot, n) for n in namen}
+    for name in namen:
+        setattr(bot, name, (lambda n: lambda cid, *a: aufrufe.append((n, cid) + a))(name))
+    try:
+        menue_ablauf(aufrufe, nachrichten)
+    finally:
+        for n, f in originale.items():          # Attrappen wieder entfernen, damit andere Tests die echten Funktionen nutzen
+            setattr(bot, n, f)
+
+
+def menue_ablauf(aufrufe, nachrichten):
+
+    def druecke(cid, text):
+        bot.handle_message({"chat": {"id": cid}, "text": text, "from": {"first_name": "T"}})
+
+    bot.awaiting.clear()
+    druecke(MITGLIED, "⭐ Favoriten")
+    pruefe(("cmd_favoriten", MITGLIED) in aufrufe, "Taste Favoriten startet den Befehl nicht")
+    druecke(MITGLIED, "🔍 Suche")
+    pruefe(MITGLIED in bot.awaiting and "Haltestelle" in nachrichten[-1][1], "Taste Suche fragt nicht nach dem Namen")
+    druecke(MITGLIED, "Bocholt Bahnhof")
+    pruefe(("cmd_suche", MITGLIED, "Bocholt Bahnhof") in aufrufe, "Antwort nach der Taste Suche startet die Suche nicht")
+    pruefe(MITGLIED not in bot.awaiting, "die offene Frage blieb bestehen")
+    druecke(MITGLIED, "einfach Text")
+    pruefe(not any(a[0] == "cmd_suche" and a[2] == "einfach Text" for a in aufrufe), "freier Text loest ohne Taste eine Suche aus")
+    # Befehl bricht eine offene Frage ab
+    druecke(MITGLIED, "🔍 Suche")
+    druecke(MITGLIED, "/status")
+    pruefe(MITGLIED not in bot.awaiting and ("cmd_status", MITGLIED) in aufrufe, "ein Befehl brach die offene Frage nicht ab")
+    # Frage laeuft ab
+    bot.awaiting[MITGLIED] = ("/suche", __import__("time").time() - 1000)
+    n = len([a for a in aufrufe if a[0] == "cmd_suche"])
+    druecke(MITGLIED, "zu spaet")
+    pruefe(len([a for a in aufrufe if a[0] == "cmd_suche"]) == n, "abgelaufene Frage wurde noch beantwortet")
+    # Rechte gelten auch fuer Tasten
+    aufrufe.clear()
+    druecke(GAST, "⭐ Favoriten")
+    druecke(GAST, "🔍 Suche")
+    druecke(FREMD, "⭐ Favoriten")
+    druecke(FREMD, "🔍 Suche")
+    druecke(MITGLIED, "👥 Mitglieder")
+    druecke(FREMD, "👥 Mitglieder")
+    pruefe(not aufrufe, f"Tasten umgehen die Rechtepruefung: {aufrufe}")
+    pruefe(GAST not in bot.awaiting and FREMD not in bot.awaiting, "Gast oder Fremder bekam eine offene Frage fuer Suche")
+    druecke(FREMD, "🎟 Code eingeben")
+    druecke(FREMD, "ABC234")
+    pruefe(("cmd_code", FREMD, "ABC234", {"first_name": "T"}) in aufrufe, "Code-Taste funktioniert nicht fuer Fremde")
+    druecke(BESITZER, "👥 Mitglieder")
+    druecke(VERWALTER, "👥 Mitglieder")
+    pruefe(("cmd_mitglieder", BESITZER) in aufrufe and ("cmd_mitglieder", VERWALTER) in aufrufe, "Besitzer oder Verwalter erreicht Mitglieder nicht")
+
+
 def test_clear_befehl():
     neu()
     for wer in (BESITZER, VERWALTER, MITGLIED, GAST):

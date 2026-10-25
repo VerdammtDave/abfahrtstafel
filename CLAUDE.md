@@ -34,6 +34,7 @@ Der Kommentarblock "REGELN FUER SPAETERE AENDERUNGEN" steht in `bot/abfahrtsbot.
 - **Vor jedem Commit** `python3 bot/test_rechte.py` ausführen. Er muss bestehen. Zusätzlich `python3 -m py_compile bot/abfahrtsbot.py`.
 - Bei Sicherheitsfixes immer einen leicht verständlichen Bericht für das Team ohne Fachjargon anlegen.
 - `bot/config.json` und `bot/data.json` nie einchecken. Der Bot-Token gehört nie in das Repo, in Logs oder in Antworten.
+- Neue Befehle für Nutzer bekommen auch eine Taste (`MENU_BUTTONS`, `menu_keyboard`), aber nur für Rollen, die den Befehl nutzen dürfen. Der Test prüft, dass keine Taste mehr zeigt, als erlaubt ist.
 - Nur Standardbibliothek im Bot. Stil und Sprache wie der bestehende Code: deutsche Texte, kurze Funktionen, Kommentare nur wo nötig.
 - Keinen langen Gedankenstrich verwenden, weder in Texten noch in Doku, Kommentaren oder Commit-Nachrichten.
 - Autor-Adresse der Commits ist die GitHub-No-Reply-Adresse, nie eine private E-Mail-Adresse.

@@ -723,8 +723,42 @@ def may_use(cid, cmd=None, action=None):
     return False
 
 
+# Tasten unter dem Eingabefeld. Beschriftung -> Befehl. Jede Taste laeuft durch dieselbe Rechtepruefung wie der Befehl.
+MENU_BUTTONS = {
+    "⭐ Favoriten": "/favoriten", "🔍 Suche": "/suche", "🚏 Abfahrten": "/abfahrten", "⏱ Verspätungen": "/jetzt",
+    "📌 Verfolgte Fahrten": "/tracking", "🔁 Wiederkehrend": "/wiederkehrend", "🔕 Meldungen aus": "/pause",
+    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🧹 Chat löschen": "/clear", "👥 Mitglieder": "/mitglieder",
+    "🔑 Einladen": "/code", "🎟 Code eingeben": "/code", "❓ Hilfe": "/hilfe",
+}
+# Tasten, nach denen der Bot erst noch einen Text braucht (Name der Haltestelle, Code)
+MENU_ASK = {
+    "🔍 Suche": ("/suche", "Wie heißt die Haltestelle? Schreib den Namen, zum Beispiel: Bocholt Bahnhof"),
+    "🎟 Code eingeben": ("/code", "Schick mir jetzt den Code, zum Beispiel: ABC234"),
+}
+ASK_TTL = 300                      # so lange wartet der Bot auf die Antwort nach einer Taste
+awaiting = {}                      # Chat -> (Befehl, Zeitpunkt), nur im Speicher
+
+
+def menu_keyboard(cid):
+    """Tasten je nach Rolle. Es erscheinen nur Tasten, die die Person auch nutzen darf."""
+    if is_full(cid):
+        rows = [["⭐ Favoriten", "🔍 Suche"], ["🚏 Abfahrten", "⏱ Verspätungen"],
+                ["📌 Verfolgte Fahrten", "🔁 Wiederkehrend"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
+                ["⚙️ Status", "🧹 Chat löschen"]]
+        extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_admin(cid) else [])
+        if extra:
+            rows.append(extra)
+        rows.append(["🎟 Code eingeben", "❓ Hilfe"])
+    elif cid in data["guests"]:
+        rows = [["🎟 Code eingeben", "📌 Verfolgte Fahrten"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
+                ["⚙️ Status", "🧹 Chat löschen"], ["❓ Hilfe"]]
+    else:
+        rows = [["🎟 Code eingeben"]]
+    return {"keyboard": [[{"text": t} for t in row] for row in rows], "resize_keyboard": True, "is_persistent": True}
+
+
 def cmd_help(cid):
-    send(cid, HELP if is_admin(cid) else GUEST_HELP)
+    send(cid, HELP if is_admin(cid) else GUEST_HELP, reply_markup=menu_keyboard(cid))
 
 
 CLEAR_BATCH = 100                  # deleteMessages nimmt höchstens 100 Nachrichten auf einmal
@@ -773,8 +807,24 @@ def cmd_status(cid):
 def handle_message(m):
     cid = m["chat"]["id"]
     text = (m.get("text") or "").strip()
+    if text.startswith("/"):
+        awaiting.pop(cid, None)                                  # ein Befehl bricht eine offene Frage ab
+    elif text in MENU_BUTTONS:
+        awaiting.pop(cid, None)
+        if text in MENU_ASK:
+            ask_cmd, frage = MENU_ASK[text]
+            with lock:
+                erlaubt = ask_cmd == "/code" or may_use(cid, cmd=ask_cmd)
+            if erlaubt:
+                awaiting[cid] = (ask_cmd, time.time())
+                return send(cid, frage)
+        text = MENU_BUTTONS[text]
+    elif cid in awaiting and text:
+        ask_cmd, seit = awaiting.pop(cid)
+        if time.time() - seit < ASK_TTL:
+            text = f"{ask_cmd} {text}"
     if not text.startswith("/"):
-        return send(cid, "Befehle: /hilfe")
+        return send(cid, "Nutze die Tasten unten oder /hilfe.", reply_markup=menu_keyboard(cid))
     cmd, _, arg = text.partition(" ")
     cmd, arg = cmd.split("@")[0].lower(), arg.strip()
     with lock:
@@ -786,7 +836,8 @@ def handle_message(m):
             data["names"][str(cid)] = display_name(m.get("from"))      # Namensaenderung nachziehen
             save()
         if cmd != "/code" and not may_use(cid, cmd=cmd):
-            return send(cid, "Das ist ein privater Bot. Mit einem Einladungs- oder Verbindungscode (/code CODE) bekommst du Zugriff.")
+            return send(cid, "Das ist ein privater Bot. Mit einem Einladungs- oder Verbindungscode (/code CODE) bekommst du Zugriff.",
+                        reply_markup=menu_keyboard(cid))
     {
         "/start": lambda: cmd_weblogin(cid, arg[4:]) if arg.startswith("web_") else cmd_help(cid),
         "/hilfe": lambda: cmd_help(cid),
@@ -1223,7 +1274,7 @@ def cmd_code(cid, arg, user=None):
             invited = inv["by"]
             name = who(cid)
     if invited is not None:
-        send(cid, "✅ Einladung eingelöst. Du kannst den Bot jetzt voll nutzen.\n\n" + HELP)
+        send(cid, "✅ Einladung eingelöst. Du kannst den Bot jetzt voll nutzen.\n\n" + HELP, reply_markup=menu_keyboard(cid))
         if is_admin(invited):
             send(invited, f"✅ Einladungscode {code} wurde von {name} eingelöst. /mitglieder zeigt alle Eingeladenen.")
         else:
@@ -1236,11 +1287,14 @@ def cmd_code(cid, arg, user=None):
         if not e:
             code_fails[cid] = fails + [now]
             return send(cid, "Code ung\u00fcltig oder abgelaufen.")
-        if not is_admin(cid) and cid not in data["guests"]:
+        neu_gast = not is_full(cid) and cid not in data["guests"]
+        if neu_gast:
             data["guests"].append(cid)                    # Zugriff nur auf geteilte Verbindungen
         get_chat(cid)
         save()
         w = dict(e["w"])
+    if neu_gast:
+        send(cid, "Unten findest du die Tasten für geteilte Verbindungen.", reply_markup=menu_keyboard(cid))
     show_shared(cid, code, w)
 
 
