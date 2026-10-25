@@ -28,9 +28,16 @@ Wer **nur die Website ohne Telegram** will, macht nur Teil A und C und lässt `B
    Ohne Bot: Variable weglassen.
 7. **Deploy** klicken.
 
-## Teil B: Domains bei All-Inkl (DNS)
+## Teil B: DNS-Einträge setzen
 
-Im KAS (All-Inkl-Kundenmenü) → **Domain → deine Domain → DNS-Einstellungen → neuen DNS-Eintrag hinzufügen**:
+**Erst prüfen, wo die DNS-Einträge liegen:** `nslookup -type=NS deine-domain.de`. Stehen dort Nameserver von All-Inkl (`ns5.kasserver.com` o. ä.), geht es im KAS.
+Stehen dort z. B. `*.ns.cloudflare.com`, werden die Einträge **in Cloudflare** gesetzt, auch wenn die Domain bei All-Inkl gekauft wurde.
+
+**All-Inkl (KAS):** Domain → deine Domain → DNS-Einstellungen → neuen DNS-Eintrag hinzufügen.
+**Cloudflare:** Dashboard → deine Domain → DNS → Records → Add record. Bei einem vorhandenen Wildcard-Eintrag `*` gilt der neue, genauere Eintrag zuerst.
+Die Wolke zunächst auf **„DNS only“** (grau) stellen, damit Coolify das HTTPS-Zertifikat holen kann. Mit orange Wolke (Proxy) muss in Cloudflare unter SSL/TLS der Modus **Full** stehen, sonst gibt es Weiterleitungsschleifen.
+
+Einträge:
 
 | Name | Typ | Wert |
 |---|---|---|
