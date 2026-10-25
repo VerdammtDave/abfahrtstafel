@@ -12,6 +12,11 @@ eine einzelne Datei (`index.html`), keine Build-Schritte, kein Server-Code nöti
 **Optional:** Mit dem mitgelieferten Telegram-Bot (`bot/`) lassen sich einzelne Fahrten verfolgen (Meldung bei Verspätung/Ausfall)
 und Favoriten zwischen Geräten synchronisieren. Das ist nur nötig, wenn du „Mit Telegram anmelden“ nutzen willst.
 
+## Empfohlen: alles zusammen in Coolify / Docker Compose
+
+Website und Bot laufen als zwei Container hinter einer Adresse, ohne Portfreigabe: [docs/Docker-Coolify.md](docs/Docker-Coolify.md).
+Pflicht-Variablen: `BOT_TOKEN` und `BOT_OWNER_ID`.
+
 ## Nur die Website
 
 `index.html` auf irgendeinen Webspace legen, fertig. Damit die Anmelde-Schaltfläche nicht erscheint, in `index.html`
@@ -40,9 +45,12 @@ Details: [bot/README.md](bot/README.md), Betrieb hinter dem Heimrouter mit eigen
 
 ## Sicherheit
 
-- `bot/config.json` (Token) und `bot/data.json` (Sitzungen, Favoriten) stehen in `.gitignore`. Niemals einchecken.
-- Der Bot läuft als eigener Systembenutzer mit eingeschränkten Rechten; die API lauscht nur auf `127.0.0.1` und ist nur über Caddy erreichbar.
-- Im Router nur Port 80 und 443 freigeben, nie 8787.
+- `bot/config.json` (Token) und `bot/data.json` (Sitzungen, Favoriten) stehen in `.gitignore`. Niemals einchecken. Im Container kommt der Token aus der Umgebungsvariable `BOT_TOKEN`.
+- Der Bot läuft ohne Root (Container) bzw. als eigener Systembenutzer; die API ist nur über den Proxy erreichbar.
+- `BOT_OWNER_ID` legt den Besitzer fest, sonst würde der Erste mit `/start` Besitzer.
+- Sitzungs-Tokens werden nur als Hash gespeichert, Anmeldeversuche sind pro IP gedrosselt, die Datendatei ist nur für den Bot lesbar.
+- Sicherheitslücken bitte nicht öffentlich als Issue melden, sondern per privater Nachricht an den Autor.
+- Im Router (nur bei der Variante ohne Docker) nur Port 80 und 443 freigeben, nie 8787.
 
 ## Lizenz
 

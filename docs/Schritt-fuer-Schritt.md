@@ -1,4 +1,7 @@
-# Schritt für Schritt: Website (Coolify) + Bot (Privatserver) + Domain (All-Inkl)
+# Schritt für Schritt: Website (Coolify) + Bot (Privatserver) + Domain
+
+> **Einfacher:** Läuft auch der Bot in Coolify, entfällt dieser ganze Aufbau (keine Portfreigabe, keine zweite Domain).
+> Siehe [Docker-Coolify.md](Docker-Coolify.md). Diese Anleitung gilt nur, wenn der Bot auf einem **anderen** Server laufen soll.
 
 So sieht es am Ende aus:
 

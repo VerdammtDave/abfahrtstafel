@@ -2,4 +2,5 @@ bot/
 docs/
 deploy/Caddyfile.example
 deploy/abfahrtsbot.service
+docker-compose.yml
 .git

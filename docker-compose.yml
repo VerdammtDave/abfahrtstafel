@@ -1,0 +1,40 @@
+# Website + Bot hinter EINER Adresse (z. B. in Coolify als "Docker Compose" einrichten).
+# Die Website leitet /api intern an den Bot weiter. Der Bot hat keinen eigenen offenen Port.
+#
+# Pflicht-Variablen (in Coolify unter Environment Variables):
+#   BOT_TOKEN     Token von @BotFather
+#   BOT_OWNER_ID  deine Telegram-Chat-ID (z. B. von @userinfobot). Nur diese Person wird Besitzer.
+services:
+  web:
+    build: .
+    environment:
+      BOT_API_URL: /api
+    depends_on:
+      - bot
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  bot:
+    build: ./bot
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      BOT_OWNER_ID: ${BOT_OWNER_ID}
+      BOT_API_HOST: 0.0.0.0
+      BOT_TRUST_PROXY: "true"
+      BOT_DATA_FILE: /data/data.json
+    volumes:
+      - botdata:/data
+    expose:
+      - "8787"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  botdata:

@@ -378,8 +378,11 @@ def monitor_loop():
 def save():
     path = os.path.join(HERE, cfg["data_file"])
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)    # enthaelt Sitzungen und Chat-IDs: nur fuer den Besitzer lesbar
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=1)
+        fh.flush()
+        os.fsync(fh.fileno())
     os.replace(tmp, path)
 
 
@@ -712,8 +715,8 @@ def handle_message(m):
     cmd, _, arg = text.partition(" ")
     cmd, arg = cmd.split("@")[0].lower(), arg.strip()
     with lock:
-        if data["owner"] is None and cmd == "/start":
-            data["owner"] = cid                       # erster Nutzer wird Besitzer
+        if data["owner"] is None and cmd == "/start" and not cfg["owner_id"]:
+            data["owner"] = cid                       # erster Nutzer wird Besitzer (nur ohne owner_id in der Konfiguration)
             get_chat(cid)
             save()
         if is_full(cid) and display_name(m.get("from")) not in ("", data["names"].get(str(cid))):
@@ -1408,14 +1411,18 @@ def web_login_poll(poll):
         if e["cid"] is None:
             return 200, {"status": "pending"}
         token = secrets.token_urlsafe(32)
-        data["sessions"][token] = {"cid": e["cid"], "exp": time.time() + SESSION_TTL}
+        data["sessions"][token_hash(token)] = {"cid": e["cid"], "exp": time.time() + SESSION_TTL}   # im Klartext sieht nur die Website das Token
         del web_logins[code]
         save()
         return 200, {"status": "ok", "session": token, "name": who(e["cid"])}
 
 
+def token_hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def web_session(auth):
-    token = auth[7:] if auth.startswith("Bearer ") else ""
+    token = token_hash(auth[7:]) if auth.startswith("Bearer ") else ""
     with lock:
         s = data["sessions"].get(token)
         if s and s["exp"] > time.time() and is_full(s["cid"]):
@@ -1521,17 +1528,47 @@ def web_route(method, path, q, body, auth):
     return 404, {"error": "unbekannt"}
 
 
+rate_hits = {}             # (IP, Aktion) -> Zeitpunkte der letzten Aufrufe
+
+
+def rate_ok(ip, action, limit, window):
+    now = time.time()
+    with lock:
+        hits = [t for t in rate_hits.get((ip, action), []) if t > now - window]
+        if len(hits) >= limit:
+            rate_hits[(ip, action)] = hits
+            return False
+        rate_hits[(ip, action)] = hits + [now]
+        if len(rate_hits) > 5000:      # Speicher begrenzen
+            for k in [k for k, v in rate_hits.items() if not v or v[-1] < now - 3600]:
+                del rate_hits[k]
+        return True
+
+
 class Api(BaseHTTPRequestHandler):
+    timeout = 15               # haengende Verbindungen nach 15 s trennen
+
     def log_message(self, *a):
         pass
+
+    def client_ip(self):
+        if cfg["trust_proxy"]:     # nur hinter eigenem Proxy, sonst laesst sich der Header faelschen
+            ip = (self.headers.get("X-Real-IP") or "").strip()
+            if ip:
+                return ip
+        return self.client_address[0]
 
     def reply(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", cfg["web_origin"] or "*")
-        self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if cfg["web_origin"]:      # CORS nur fuer die eigene Website. Gleiche Adresse (Proxy) braucht keins.
+            self.send_header("Access-Control-Allow-Origin", cfg["web_origin"])
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1539,10 +1576,14 @@ class Api(BaseHTTPRequestHandler):
     def handle_any(self, method):
         try:
             n = int(self.headers.get("Content-Length") or 0)
-            if n > 20000:
+            if n < 0 or n > 20000:
                 return self.reply(413, {"error": "zu groß"})
             body = json.loads(self.rfile.read(n)) if n else {}
+            if not isinstance(body, dict):
+                raise ValueError("ungültige Eingabe")
             url = urllib.parse.urlparse(self.path)
+            if url.path.rstrip("/") == "/login/start" and not rate_ok(self.client_ip(), "login", 10, 600):
+                return self.reply(429, {"error": "zu viele Anmeldeversuche, bitte später erneut versuchen"})
             code, out = web_route(method, url.path.rstrip("/"), urllib.parse.parse_qs(url.query), body,
                                   self.headers.get("Authorization", ""))
         except (ValueError, AttributeError, TypeError, KeyError):
@@ -1577,11 +1618,18 @@ def load_config():
     path = os.path.join(HERE, "config.json")
     cfg.update({"bot_token": "", "poll_seconds": 60, "default_threshold_min": 5,
                 "window_min": 120, "data_file": "data.json", "ipv4_only": True, "routine_lead_min": 60,
-                "api_port": 8787, "api_host": "127.0.0.1", "web_origin": "", "bot_username": ""})
+                "api_port": 8787, "api_host": "127.0.0.1", "web_origin": "", "bot_username": "",
+                "owner_id": 0, "trust_proxy": False})
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             cfg.update(json.load(fh))
+    # Umgebungsvariablen haben Vorrang (praktisch im Container, dann liegen keine Geheimnisse in Dateien)
     cfg["bot_token"] = os.environ.get("BOT_TOKEN") or cfg["bot_token"]
+    for env, key in (("BOT_API_HOST", "api_host"), ("BOT_DATA_FILE", "data_file"),
+                     ("BOT_WEB_ORIGIN", "web_origin"), ("BOT_USERNAME", "bot_username")):
+        cfg[key] = os.environ.get(env) or cfg[key]
+    cfg["owner_id"] = int(os.environ.get("BOT_OWNER_ID") or cfg["owner_id"] or 0)
+    cfg["trust_proxy"] = os.environ.get("BOT_TRUST_PROXY", str(cfg["trust_proxy"])).lower() in ("1", "true", "yes")
     if cfg["ipv4_only"]:
         force_ipv4()
 
@@ -1605,6 +1653,12 @@ def main():
     if not cfg["bot_token"] or cfg["bot_token"].startswith("DEIN"):
         sys.exit("Kein bot_token. Trage ihn in config.json ein (oder setze BOT_TOKEN).")
     load()
+    for k in [k for k in data["sessions"] if len(k) != 64]:     # alte Sitzungen mit Klartext-Token ungueltig machen
+        del data["sessions"][k]
+    if cfg["owner_id"]:
+        data["owner"] = cfg["owner_id"]                          # Besitzer fest vorgegeben, niemand kann ihn per /start uebernehmen
+        get_chat(cfg["owner_id"])
+    save()
     tg("setMyCommands", commands=[
         {"command": "suche", "description": "Haltestelle suchen"},
         {"command": "favoriten", "description": "Deine Haltestellen"},

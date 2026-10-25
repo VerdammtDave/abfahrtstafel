@@ -96,8 +96,11 @@ Die Anmeldung gilt 30 Tage; wer aus `/mitglieder` entfernt wird, verliert sie so
 Beim ersten Anmelden werden die Favoriten aus dem Browser mit denen des Bots zusammengeführt. Wiederkehrende Fahrten legt man weiter im Bot an,
 die Website zeigt sie nur an. Bleibt `BOT_API` in `index.html` leer, arbeitet die Seite ohne Anmeldung wie bisher.
 
-Läuft die Seite woanders (z. B. bei einem Webhoster), braucht die API eine eigene HTTPS-Adresse (z. B. Tailscale Funnel), `BOT_API` wird auf
-diese Adresse gesetzt und `web_origin` in `config.json` auf die Adresse der Seite.
+Läuft die Seite woanders (z. B. bei einem Webhoster), braucht die API eine eigene HTTPS-Adresse, `BOT_API` wird auf
+diese Adresse gesetzt und `web_origin` in `config.json` auf die Adresse der Seite. Ohne `web_origin` sendet die API keine CORS-Header (nur gleiche Adresse).
+
+Weitere Einstellungen in `config.json` bzw. Umgebungsvariablen: `owner_id`/`BOT_OWNER_ID` (Besitzer festlegen), `trust_proxy`/`BOT_TRUST_PROXY`
+(Client-IP aus `X-Real-IP` lesen, nur hinter eigenem Proxy), `BOT_API_HOST`, `BOT_DATA_FILE`, `BOT_TOKEN`.
 
 ## Hinweise
 
