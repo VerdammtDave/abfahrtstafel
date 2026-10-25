@@ -463,6 +463,30 @@ def test_abfahrten_fragt_nach_haltestelle():
     pruefe(GAST not in bot.awaiting, "Gast bekam eine Frage fuer Abfahrten")
 
 
+def test_menue_ausblenden():
+    neu()
+    bot.save = lambda: None
+    gesendet = []
+    bot.send = lambda cid, text, **k: gesendet.append((cid, str(text), k.get("reply_markup")))
+    bot.awaiting.clear()
+    tastatur = bot.menu_keyboard(BESITZER)
+    pruefe("is_persistent" not in tastatur, "das Menue ist festgeheftet und laesst sich nicht einklappen")
+    pruefe(tastatur.get("resize_keyboard") is True, "das Menue ist nicht kompakt")
+    for name, cid in {"Besitzer": BESITZER, "Verwalter": VERWALTER, "Mitglied": MITGLIED, "Gast": GAST}.items():
+        pruefe("🙈 Ausblenden" in tasten(cid), f"{name} hat keine Taste zum Ausblenden")
+    pruefe("🙈 Ausblenden" not in tasten(FREMD), "Fremde sehen die Ausblenden-Taste")
+    for wer in (BESITZER, VERWALTER, MITGLIED, GAST):
+        pruefe(bot.may_use(wer, cmd="/menue") and bot.may_use(wer, cmd="/menueaus"), f"/menue ist fuer {wer} nicht erlaubt")
+    pruefe(not bot.may_use(FREMD, cmd="/menue") and not bot.may_use(FREMD, cmd="/menueaus"), "Fremde duerfen /menue nutzen")
+    bot.handle_message({"chat": {"id": MITGLIED}, "text": "🙈 Ausblenden", "from": {"first_name": "T"}})
+    pruefe(gesendet and gesendet[-1][2] == {"remove_keyboard": True}, "die Taste Ausblenden entfernt das Menue nicht")
+    pruefe("/menue" in gesendet[-1][1], "die Meldung sagt nicht, wie man das Menue zurueckholt")
+    bot.handle_message({"chat": {"id": MITGLIED}, "text": "/menue", "from": {"first_name": "T"}})
+    pruefe(gesendet[-1][2] and "keyboard" in gesendet[-1][2], "/menue zeigt das Menue nicht wieder")
+    bot.handle_message({"chat": {"id": FREMD}, "text": "/menueaus", "from": {"first_name": "T"}})
+    pruefe(gesendet[-1][2] != {"remove_keyboard": True}, "Fremde konnten /menueaus nutzen")
+
+
 def test_clear_befehl():
     neu()
     for wer in (BESITZER, VERWALTER, MITGLIED, GAST):

@@ -447,6 +447,7 @@ HELP = (
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
     "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
     "/autoclear \u2013 Nachrichten automatisch nach 47 Stunden l\u00f6schen, an oder aus\n"
+    "/menue \u2013 Tasten-Men\u00fc anzeigen (Taste Ausblenden blendet es aus)\n"
     "/status \u2013 Einstellungen anzeigen\n\n"
     "Tracking: In einer Abfahrtsliste eine Fahrt antippen. Du bekommst sofort den Stand, danach jede \u00c4nderung "
     "um 2 min sowie eine Erinnerung 15 und 5 min vor Abfahrt."
@@ -667,7 +668,7 @@ def cmd_schwelle(cid, arg):
     send(cid, f"Ich melde mich ab {arg} min Versp\u00e4tung.")
 
 
-GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status", "/clear", "/autoclear"}
+GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status", "/clear", "/autoclear", "/menue", "/menueaus"}
 GUEST_ACTIONS = {"tw", "tr", "ud", "sh", "sr", "sf", "ac"}
 GUEST_HELP = (
     "Abfahrts-Bot \u2013 du hast Zugriff auf geteilte Verbindungen.\n\n"
@@ -676,6 +677,7 @@ GUEST_HELP = (
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
     "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
     "/autoclear \u2013 Nachrichten automatisch nach 47 Stunden l\u00f6schen, an oder aus\n"
+    "/menue \u2013 Tasten-Men\u00fc anzeigen (Taste Ausblenden blendet es aus)\n"
     "/status \u2013 Einstellungen anzeigen"
 )
 
@@ -757,7 +759,7 @@ MENU_BUTTONS = {
     "⭐ Favoriten": "/favoriten", "🔍 Suche": "/suche", "🚏 Abfahrten": "/abfahrten", "⏱ Verspätungen": "/jetzt",
     "📌 Verfolgte Fahrten": "/tracking", "🔁 Wiederkehrend": "/wiederkehrend", "🔕 Meldungen aus": "/pause",
     "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder",
-    "🔑 Einladen": "/code", "🎟 Code eingeben": "/code", "❓ Hilfe": "/hilfe",
+    "🔑 Einladen": "/code", "🎟 Code eingeben": "/code", "❓ Hilfe": "/hilfe", "🙈 Ausblenden": "/menueaus",
 }
 # Tasten, nach denen der Bot erst noch einen Text braucht (Name der Haltestelle, Code)
 MENU_ASK = {
@@ -777,13 +779,21 @@ def menu_keyboard(cid):
         extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_admin(cid) else [])
         if extra:
             rows.append(extra)
-        rows.append(["❓ Hilfe"])
+        rows.append(["❓ Hilfe", "🙈 Ausblenden"])
     elif cid in data["guests"]:
         rows = [["🎟 Code eingeben", "📌 Verfolgte Fahrten"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
-                ["⚙️ Status", "🕒 Auto-Löschen"], ["🧹 Chat löschen", "❓ Hilfe"]]
+                ["⚙️ Status", "🕒 Auto-Löschen"], ["🧹 Chat löschen", "❓ Hilfe"], ["🙈 Ausblenden"]]
     else:
         rows = [["🎟 Code eingeben"]]
-    return {"keyboard": [[{"text": t} for t in row] for row in rows], "resize_keyboard": True, "is_persistent": True}
+    return {"keyboard": [[{"text": t} for t in row] for row in rows], "resize_keyboard": True}
+
+
+def cmd_menue(cid):
+    send(cid, "Hier ist das Menü. Mit dem Tastatur-Symbol im Eingabefeld klappst du es ein und aus.", reply_markup=menu_keyboard(cid))
+
+
+def cmd_menue_aus(cid):
+    send(cid, "Menü ausgeblendet. Mit /menue holst du es zurück.", reply_markup={"remove_keyboard": True})
 
 
 def cmd_help(cid):
@@ -974,6 +984,8 @@ def handle_message(m):
         "/status": lambda: cmd_status(cid),
         "/clear": lambda: cmd_clear(cid, m.get("message_id")),
         "/autoclear": lambda: cmd_autoclear(cid, arg),
+        "/menue": lambda: cmd_menue(cid),
+        "/menueaus": lambda: cmd_menue_aus(cid),
     }.get(cmd, lambda: send(cid, "Unbekannter Befehl. /hilfe"))()
 
 
@@ -2004,6 +2016,7 @@ def main():
         {"command": "weiter", "description": "Benachrichtigungen an"},
         {"command": "clear", "description": "Chatverlauf löschen"},
         {"command": "autoclear", "description": "Nachrichten nach 47 Stunden löschen"},
+        {"command": "menue", "description": "Tasten-Menü anzeigen"},
         {"command": "status", "description": "Einstellungen"},
     ])
     if cfg["api_port"]:

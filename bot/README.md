@@ -33,6 +33,7 @@ dem Code, die nächste Nachricht ist die Antwort (wartet 5 Minuten). Ein Befehl 
 | `/wiederkehrend` | wiederkehrende Fahrten (z. B. Mo–Fr 7:00), antippen zum Löschen |
 | `/jetzt` | aktuelle Verspätungen an deinen Favoriten |
 | `/pause`, `/weiter` | Benachrichtigungen aus/an |
+| `/menue` | Tasten-Menü wieder anzeigen. Die Taste "Ausblenden" blendet es aus, mit dem Tastatur-Symbol im Eingabefeld klappt man es ein und aus |
 | `/clear` | Chatverlauf löschen (Telegram erlaubt nur Nachrichten der letzten 48 Stunden). Favoriten und Tracking bleiben |
 | `/autoclear` | Nachrichten automatisch nach 47 Stunden löschen, an oder aus (`/autoclear an`, `/autoclear aus`, oder über die Taste). Gilt ab dem Einschalten |
 | `/status` | Einstellungen und Zeit der letzten Prüfung |
