@@ -35,7 +35,7 @@ MODES = ["all", "bus", "bahn", "off"]
 MODE_ICON = {"all": "\U0001f68c\U0001f686", "bus": "\U0001f68c", "bahn": "\U0001f686", "off": "\U0001f515"}
 
 cfg = {}
-data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "invites": {}, "names": {}, "sessions": {}}
+data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "inviters": [], "invites": {}, "names": {}, "sessions": {}}
 lock = threading.Lock()
 last_check = None
 
@@ -651,6 +651,8 @@ GUEST_HELP = (
 )
 
 
+ADMIN_ACTIONS = {"mrm", "mi"}                             # Mitglieder entfernen, Einladen erlauben: nur Besitzer und Verwalter
+MAX_OPEN_INVITES = 5                                      # offene Einladungscodes pro Einlader
 OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung nur fuer den Besitzer (und den Verwalter)
 VERWALTER_COMMANDS = set()                                # Befehle rund um Server und Betrieb: NUR der Verwalter. Aktuell gibt es keine.
 INVITE_TTL = 24 * 3600                                    # Einladungscode gilt 24 h
@@ -682,6 +684,11 @@ def is_admin(cid):
     return is_owner(cid) or is_verwalter(cid)
 
 
+def can_invite(cid):
+    """Besitzer, Verwalter und Mitglieder, denen das Einladen erlaubt wurde (Einlader)."""
+    return is_admin(cid) or (cid in data["members"] and cid in data["inviters"])
+
+
 def display_name(user):
     """Anzeigename aus dem Telegram-Konto: 'Vorname Nachname (@benutzername)'."""
     user = user or {}
@@ -710,7 +717,7 @@ def may_use(cid, cmd=None, action=None):
     if is_owner(cid):
         return cmd not in VERWALTER_COMMANDS if cmd else True
     if cid in data["members"]:
-        return cmd not in OWNER_COMMANDS | VERWALTER_COMMANDS if cmd else action != "mrm"
+        return cmd not in OWNER_COMMANDS | VERWALTER_COMMANDS if cmd else action not in ADMIN_ACTIONS
     if cid in data["guests"]:
         return cmd in GUEST_COMMANDS if cmd else action in GUEST_ACTIONS
     return False
@@ -1086,6 +1093,10 @@ def show_shared(cid, code, w, mid=None):
 
 def create_invite(cid):
     with lock:
+        if not is_admin(cid):                                  # Einlader haben nur wenige offene Codes
+            offen = [c for c, i in data["invites"].items() if i["by"] == cid and i["exp"] > time.time()]
+            if len(offen) >= MAX_OPEN_INVITES:
+                return send(cid, f"Du hast schon {MAX_OPEN_INVITES} offene Einladungscodes. Warte, bis sie eingelöst werden oder ablaufen.")
         while True:
             code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(8))
             if code not in data["invites"] and code not in data["shares"]:
@@ -1098,12 +1109,19 @@ def create_invite(cid):
               "Der Code gilt 24 Stunden und nur für eine Person.", parse_mode="HTML")
 
 
+def drop_invites(m):
+    """Offene Einladungscodes einer Person loeschen (wenn sie entfernt wird oder nicht mehr einladen darf)."""
+    data["invites"] = {c: i for c, i in data["invites"].items() if i["by"] != m}
+
+
 def removable_members():
     return [m for m in data["members"] if not is_verwalter(m)]       # der Verwalter ist nie entfernbar
 
 
 def members_keyboard():
-    return {"inline_keyboard": [[{"text": f"\U0001f5d1 {who(m)} entfernen"[:60], "callback_data": f"mrm:{m}"}]
+    return {"inline_keyboard": [[{"text": f"\U0001f5d1 {who(m)}"[:40], "callback_data": f"mrm:{m}"},
+                                 {"text": "✅ darf einladen" if m in data["inviters"] else "➕ einladen erlauben",
+                                  "callback_data": f"mi:{m}"}]
                                 for m in removable_members()]}
 
 
@@ -1111,7 +1129,7 @@ def cmd_mitglieder(cid):
     with lock:
         if not is_admin(cid):
             return
-        lines = [f"• {who(m)}" for m in removable_members()]
+        lines = [f"• {who(m)}" + (" (darf einladen)" if m in data["inviters"] else "") for m in removable_members()]
         if cfg["verwalter_id"]:
             known = data["names"].get(str(cfg["verwalter_id"]))
             lines.append(f"• {known} (Verwalter)" if known else "• Verwalter")
@@ -1119,7 +1137,34 @@ def cmd_mitglieder(cid):
             return send(cid, "Noch niemand eingeladen. /code erzeugt einen Einladungscode.")
         kb = members_keyboard() if removable_members() else None
     send(cid, "Eingeladene Personen:\n" + "\n".join(lines) +
-         ("\n\nAntippen entfernt den Zugang." if kb else ""), reply_markup=kb)
+         ("\n\nMit dem Mülleimer entfernst du den Zugang. Mit dem anderen Knopf darf die Person selbst Einladungscodes erzeugen." if kb else ""),
+         reply_markup=kb)
+
+
+def handle_inviter_callback(cb, cid, mid, member):
+    """Besitzer und Verwalter erlauben einem Mitglied das Einladen oder nehmen es zurueck."""
+    with lock:
+        if not is_admin(cid):
+            return
+        m = int(member) if member.lstrip("-").isdigit() else None
+        if m is None or m not in data["members"] or is_verwalter(m):
+            answer = "Nicht möglich"
+        elif m in data["inviters"]:
+            data["inviters"].remove(m)
+            drop_invites(m)
+            save()
+            answer = "Einladen nicht mehr erlaubt"
+        else:
+            data["inviters"].append(m)
+            save()
+            answer = "Darf jetzt einladen"
+        kb = members_keyboard() if removable_members() else None
+    try:
+        tg("answerCallbackQuery", callback_query_id=cb["id"], text=answer)
+        if kb:
+            tg("editMessageReplyMarkup", chat_id=cid, message_id=mid, reply_markup=kb)
+    except Exception as e:
+        log("Callback-Antwort fehlgeschlagen:", e)
 
 
 def handle_members_callback(cb, cid, mid, member):
@@ -1131,6 +1176,9 @@ def handle_members_callback(cb, cid, mid, member):
             answer = "Nicht möglich"                          # der Verwalter kann nicht entfernt werden
         elif m in data["members"]:
             data["members"].remove(m)
+            if m in data["inviters"]:
+                data["inviters"].remove(m)
+            drop_invites(m)
             data["chats"].pop(str(m), None)               # Tracking und Favoriten der Person gehen mit
             data["state"].pop(str(m), None)
             data["names"].pop(str(m), None)
@@ -1153,7 +1201,7 @@ def handle_members_callback(cb, cid, mid, member):
 def cmd_code(cid, arg, user=None):
     code = arg.strip().upper().replace(" ", "")
     if not code:
-        if is_admin(cid):
+        if can_invite(cid):
             return create_invite(cid)
         return send(cid, "Nutzung: /code ABC234")
     now = time.time()
@@ -1176,7 +1224,12 @@ def cmd_code(cid, arg, user=None):
             name = who(cid)
     if invited is not None:
         send(cid, "✅ Einladung eingelöst. Du kannst den Bot jetzt voll nutzen.\n\n" + HELP)
-        send(invited, f"✅ Einladungscode {code} wurde von {name} eingelöst. /mitglieder zeigt alle Eingeladenen.")
+        if is_admin(invited):
+            send(invited, f"✅ Einladungscode {code} wurde von {name} eingelöst. /mitglieder zeigt alle Eingeladenen.")
+        else:
+            send(invited, f"✅ Dein Einladungscode wurde von {name} eingelöst.")
+            for boss in {data["owner"], cfg["verwalter_id"]} - {None, 0}:
+                send(boss, f"ℹ️ {name} wurde von {who(invited)} eingeladen. /mitglieder zeigt alle Eingeladenen.")
         return
     with lock:
         e = data["shares"].get(code)
@@ -1252,6 +1305,8 @@ def handle_callback(cb):
         return handle_share_callback(cb, cid, mid, action, sid)
     if action == "mrm":
         return handle_members_callback(cb, cid, mid, sid)
+    if action == "mi":
+        return handle_inviter_callback(cb, cid, mid, sid)
     if action == "wl":
         return handle_weblogin_callback(cb, cid, mid, sid)
     answer = ""

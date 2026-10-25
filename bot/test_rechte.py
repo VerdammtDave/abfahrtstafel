@@ -40,7 +40,7 @@ def neu(verwalter=VERWALTER):
     bot.data.clear()
     bot.data.update({"owner": BESITZER, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {},
                      "guests": [GAST], "shares": {}, "members": [MITGLIED], "invites": {}, "names": {},
-                     "sessions": {}})
+                     "sessions": {}, "inviters": []})
     bot.cfg["verwalter_id"] = verwalter
 
 
@@ -124,7 +124,10 @@ def test_mitglieder_duerfen_nichts_verwalten():
         pruefe(not bot.may_use(MITGLIED, cmd=b), f"Mitglied darf {b} nicht")
         pruefe(not bot.may_use(GAST, cmd=b), f"Gast darf {b} nicht")
         pruefe(not bot.may_use(FREMD, cmd=b), f"Fremde duerfen {b} nicht")
-    pruefe(not bot.may_use(MITGLIED, action="mrm"), "Mitglied darf keine Mitglieder entfernen")
+    for a in bot.ADMIN_ACTIONS:
+        pruefe(not bot.may_use(MITGLIED, action=a), f"Mitglied darf die Verwaltungs-Aktion {a} nicht")
+        pruefe(not bot.may_use(GAST, action=a), f"Gast darf die Verwaltungs-Aktion {a} nicht")
+        pruefe(bot.may_use(BESITZER, action=a) and bot.may_use(VERWALTER, action=a), f"Besitzer oder Verwalter darf {a} nicht")
     pruefe(not bot.is_admin(MITGLIED), "Mitglied ist kein Admin")
     pruefe(bot.may_use(BESITZER, action="mrm"), "Besitzer darf Mitglieder entfernen")
     for a in aktionen:
@@ -224,6 +227,55 @@ def test_keine_geheimnisse_in_texten():
     pruefe("GEHEIMER-TOKEN" not in alles, "der Token erscheint in einer Nachricht")
     pruefe(str(VERWALTER) not in alles, "die Verwalter-ID erscheint in einer Nachricht")
     pruefe(HIER not in alles, "ein Dateipfad erscheint in einer Nachricht")
+
+
+def test_einlader():
+    neu()
+    nachrichten, aufrufe = [], []
+    bot.send = lambda cid, text, **k: nachrichten.append((cid, str(text)))
+    bot.tg = lambda methode, **p: aufrufe.append((methode, p))
+    bot.save = lambda: None
+    karte = {"id": "x", "message": {"chat": {"id": BESITZER}, "message_id": 1}}
+    pruefe(not bot.can_invite(MITGLIED), "Mitglied darf ohne Erlaubnis einladen")
+    bot.cmd_code(MITGLIED, "")
+    pruefe(not bot.data["invites"], "Mitglied ohne Erlaubnis hat einen Einladungscode erzeugt")
+    # Erlauben: nur Besitzer und Verwalter
+    for wer in (MITGLIED, GAST, FREMD):
+        bot.handle_inviter_callback(karte, wer, 1, str(MITGLIED))
+    pruefe(MITGLIED not in bot.data["inviters"], "ohne Berechtigung konnte jemand das Einladen erlauben")
+    bot.handle_inviter_callback(karte, BESITZER, 1, str(MITGLIED))
+    pruefe(MITGLIED in bot.data["inviters"] and bot.can_invite(MITGLIED), "Besitzer konnte das Einladen nicht erlauben")
+    bot.cmd_code(MITGLIED, "")
+    pruefe(len(bot.data["invites"]) == 1 and all(i["by"] == MITGLIED for i in bot.data["invites"].values()), "Einlader erzeugt keinen Code")
+    pruefe(not bot.may_use(MITGLIED, cmd="/mitglieder") and not bot.may_use(MITGLIED, action="mrm"), "Einlader darf Mitglieder verwalten")
+    pruefe(not bot.may_use(MITGLIED, action="mi"), "Einlader darf das Einladen weitergeben")
+    # Obergrenze offener Codes
+    for _ in range(10):
+        bot.cmd_code(MITGLIED, "")
+    pruefe(len(bot.data["invites"]) == bot.MAX_OPEN_INVITES, f"Einlader hat {len(bot.data['invites'])} offene Codes statt {bot.MAX_OPEN_INVITES}")
+    # Einloesen: neue Person ist normales Mitglied, Besitzer erfaehrt es
+    code = next(iter(bot.data["invites"]))
+    nachrichten.clear()
+    bot.cmd_code(FREMD, code, {"first_name": "Neu"})
+    pruefe(FREMD in bot.data["members"] and FREMD not in bot.data["inviters"], "eingeladene Person ist kein normales Mitglied")
+    pruefe(not bot.can_invite(FREMD), "eingeladene Person darf sofort weiter einladen")
+    pruefe(any(c == BESITZER and "eingeladen" in t for c, t in nachrichten), "Besitzer erfaehrt nicht, wer ueber einen Einlader kam")
+    pruefe(not any(str(VERWALTER) in t for _, t in nachrichten), "die Verwalter-ID steht in einer Nachricht")
+    # Verwalter und Nicht-Mitglieder koennen nicht zu Einladern gemacht werden
+    bot.handle_inviter_callback(karte, BESITZER, 1, str(VERWALTER))
+    bot.handle_inviter_callback(karte, BESITZER, 1, str(GAST))
+    pruefe(VERWALTER not in bot.data["inviters"] and GAST not in bot.data["inviters"], "Verwalter oder Nicht-Mitglied wurde Einlader")
+    # Entziehen loescht die offenen Codes
+    bot.handle_inviter_callback(karte, VERWALTER, 1, str(MITGLIED))
+    pruefe(MITGLIED not in bot.data["inviters"] and not bot.can_invite(MITGLIED), "Entziehen hat nicht funktioniert")
+    pruefe(not any(i["by"] == MITGLIED for i in bot.data["invites"].values()), "offene Codes blieben nach dem Entziehen gueltig")
+    # Entfernen loescht die Berechtigung
+    bot.handle_inviter_callback(karte, BESITZER, 1, str(MITGLIED))
+    bot.cmd_code(MITGLIED, "")
+    bot.handle_members_callback(karte, BESITZER, 1, str(MITGLIED))
+    pruefe(MITGLIED not in bot.data["inviters"] and not any(i["by"] == MITGLIED for i in bot.data["invites"].values()), "Entfernen laesst Einlader-Rechte oder Codes zurueck")
+    pruefe(not bot.can_invite(MITGLIED), "entferntes Mitglied darf noch einladen")
+    pruefe("inviters" in bot.data and "verwalter" not in str(bot.data).lower(), "Rolle des Verwalters steht in data")
 
 
 def test_clear_befehl():

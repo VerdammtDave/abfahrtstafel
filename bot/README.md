@@ -116,6 +116,7 @@ Weitere Einstellungen in `config.json` bzw. Umgebungsvariablen: `owner_id`/`BOT_
 | **Verwalter** | die Person, die den Bot technisch betreibt und den Server besitzt | nur über `VERWALTER_ID` (oder `verwalter_id` in `config.json`) |
 | **Besitzer** | Chef im Bot, verwaltet Inhalte und Mitglieder | `BOT_OWNER_ID` bzw. `owner_id` (sonst der Erste mit `/start`) |
 | **Mitglied** | eingeladene Person | Einladungscode (`/code`) |
+| **Einlader** | Mitglied, das selbst Einladungscodes erzeugen darf | Besitzer oder Verwalter schaltet es in `/mitglieder` frei |
 | **Gast** | sieht nur eine geteilte Verbindung | Code einer geteilten Verbindung |
 
 Der Besitzer ist eine andere Person als der Verwalter und behält seine normalen Rechte im Bot.
@@ -124,10 +125,14 @@ Der Besitzer ist eine andere Person als der Verwalter und behält seine normalen
 |---|---|---|---|---|
 | Suchen, Favoriten, Tracking, wiederkehrende Fahrten | ja | ja | ja | nein |
 | Geteilte Verbindung ansehen und verfolgen | ja | ja | ja | ja |
-| Einladungscodes erzeugen, `/mitglieder`, Mitglieder entfernen | ja | ja | nein | nein |
+| Einladungscodes erzeugen | ja | ja | nur als Einlader (höchstens 5 offene Codes) | nein |
+| `/mitglieder`, Mitglieder entfernen, Einladen erlauben oder entziehen | ja | ja | nein | nein |
 | Braucht eine Einladung | nein | nein | ja | ja |
 | Kann entfernt, gesperrt oder eingeschränkt werden | **nie** | nur durch den Betreiber am Server | durch Besitzer und Verwalter | durch Ablauf des Codes |
 | Server, Konfiguration, Token, Dienste, Logs | nur am Server selbst | nein | nein | nein |
+
+Eine Person, die ein Einlader einlädt, wird ein normales Mitglied, kein Einlader. Entzieht man einem Einlader die Erlaubnis oder entfernt ihn, werden seine offenen Codes ungültig.
+Besitzer und Verwalter bekommen eine Meldung, wenn jemand über einen Einlader dazukommt.
 
 ### Eigene Telegram-Nummer herausfinden
 
