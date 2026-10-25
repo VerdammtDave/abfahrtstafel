@@ -1673,6 +1673,8 @@ def main():
         data["owner"] = cfg["owner_id"]                          # Besitzer fest vorgegeben, niemand kann ihn per /start uebernehmen
         get_chat(cfg["owner_id"])
     save()
+    if data["owner"] is None:
+        log("WARNUNG: Kein Besitzer festgelegt. Wer dem Bot zuerst /start schreibt, wird Besitzer. BOT_OWNER_ID setzen!")
     tg("setMyCommands", commands=[
         {"command": "suche", "description": "Haltestelle suchen"},
         {"command": "favoriten", "description": "Deine Haltestellen"},

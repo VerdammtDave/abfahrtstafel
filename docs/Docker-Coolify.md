@@ -18,6 +18,10 @@ Browser ──► https://abfahrtstafel.deine-domain.de ──► web (nginx) �
 
 ## Einrichtung in Coolify
 
+> **Wichtig:** Eine schon vorhandene Coolify-Anwendung vom Typ *Dockerfile* lässt sich nicht in *Docker Compose* umwandeln.
+> Lege eine **neue Ressource** an. Variablen und Domain der alten Anwendung gelten dort nicht, setze sie in der neuen neu.
+> Eine Domain darf nur an einer Ressource hängen: Die alte Anwendung vorher stoppen oder die Domain dort entfernen.
+
 1. **Projekt → New Resource → Public Repository**, URL `https://github.com/VerdammtDave/abfahrtstafel`, Branch `main`.
 2. **Build Pack: Docker Compose**, Compose-Datei `/docker-compose.yml`.
 3. Unter **Environment Variables** eintragen (beide als Runtime-Variable):
