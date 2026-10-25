@@ -35,7 +35,7 @@ MODES = ["all", "bus", "bahn", "off"]
 MODE_ICON = {"all": "\U0001f68c\U0001f686", "bus": "\U0001f68c", "bahn": "\U0001f686", "off": "\U0001f515"}
 
 cfg = {}
-data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "inviters": [], "invites": {}, "names": {}, "sessions": {}}
+data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "inviters": [], "msglog": {}, "invites": {}, "names": {}, "sessions": {}}
 lock = threading.Lock()
 last_check = None
 
@@ -77,9 +77,35 @@ def tg(method, **params):
     return http_json(url, params, timeout=70).get("result")
 
 
+AUTOCLEAR_HOURS = 47               # Telegram erlaubt Bots nur Nachrichten der letzten 48 Stunden zu loeschen
+AUTOCLEAR_MAX = 5000               # so viele Nachrichten merkt sich der Bot hoechstens pro Chat
+msg_log = {}                       # Chat -> [[Nachrichten-ID, Zeitpunkt], ...], nur fuer Chats mit Auto-Loeschen
+msg_lock = threading.Lock()        # eigener Lock, weil send() auch unter dem Haupt-Lock aufgerufen wird
+msg_dirty = False
+
+
+def autoclear_on(cid):
+    chat = data["chats"].get(str(cid))
+    return bool(chat and chat.get("autoclear"))
+
+
+def log_message(cid, mid):
+    """Nachricht fuer das spaetere automatische Loeschen merken (nur wenn der Chat es eingeschaltet hat)."""
+    global msg_dirty
+    if not isinstance(mid, int) or not autoclear_on(cid):
+        return
+    with msg_lock:
+        eintraege = msg_log.setdefault(cid, [])
+        eintraege.append([mid, int(time.time())])
+        del eintraege[:-AUTOCLEAR_MAX]
+        msg_dirty = True
+
+
 def send(chat_id, text, **extra):
     try:
-        return tg("sendMessage", chat_id=chat_id, text=text, **extra)
+        res = tg("sendMessage", chat_id=chat_id, text=text, **extra)
+        log_message(chat_id, (res or {}).get("message_id"))
+        return res
     except Exception as e:
         log("sendMessage fehlgeschlagen:", e)
 
@@ -420,6 +446,7 @@ HELP = (
     "/jetzt \u2013 aktuelle Versp\u00e4tungen an deinen Favoriten\n"
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
     "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
+    "/autoclear \u2013 Nachrichten automatisch nach 47 Stunden l\u00f6schen, an oder aus\n"
     "/status \u2013 Einstellungen anzeigen\n\n"
     "Tracking: In einer Abfahrtsliste eine Fahrt antippen. Du bekommst sofort den Stand, danach jede \u00c4nderung "
     "um 2 min sowie eine Erinnerung 15 und 5 min vor Abfahrt."
@@ -534,12 +561,13 @@ def detail_keyboard(w, cid=None):
 
 def cmd_abfahrten(cid, arg):
     if not arg:
+        awaiting[cid] = ("/abfahrten", time.time())            # die naechste Nachricht ist der Name der Haltestelle
         with lock:
             favs = copy.deepcopy(get_chat(cid)["favs"])
         if not favs:
-            return send(cid, "Nutzung: /abfahrten Bocholt Bahnhof")
+            return send(cid, "Wie heißt die Haltestelle? Schreib den Namen, zum Beispiel: Bocholt Bahnhof")
         kb = [[{"text": f["name"], "callback_data": "dep:" + f["sid"]}] for f in favs]
-        return send(cid, "Von welcher Haltestelle? Oder /abfahrten <Name> zum Suchen.",
+        return send(cid, "Von welcher Haltestelle? Tippe einen Favoriten an oder schreib den Namen.",
                     reply_markup={"inline_keyboard": kb})
     try:
         results = search_stops(arg)
@@ -639,14 +667,15 @@ def cmd_schwelle(cid, arg):
     send(cid, f"Ich melde mich ab {arg} min Versp\u00e4tung.")
 
 
-GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status", "/clear"}
-GUEST_ACTIONS = {"tw", "tr", "ud", "sh", "sr", "sf"}
+GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status", "/clear", "/autoclear"}
+GUEST_ACTIONS = {"tw", "tr", "ud", "sh", "sr", "sf", "ac"}
 GUEST_HELP = (
     "Abfahrts-Bot \u2013 du hast Zugriff auf geteilte Verbindungen.\n\n"
     "/code CODE \u2013 geteilte Verbindung ansehen und verfolgen\n"
     "/tracking \u2013 deine verfolgten Fahrten\n"
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
     "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
+    "/autoclear \u2013 Nachrichten automatisch nach 47 Stunden l\u00f6schen, an oder aus\n"
     "/status \u2013 Einstellungen anzeigen"
 )
 
@@ -727,7 +756,7 @@ def may_use(cid, cmd=None, action=None):
 MENU_BUTTONS = {
     "⭐ Favoriten": "/favoriten", "🔍 Suche": "/suche", "🚏 Abfahrten": "/abfahrten", "⏱ Verspätungen": "/jetzt",
     "📌 Verfolgte Fahrten": "/tracking", "🔁 Wiederkehrend": "/wiederkehrend", "🔕 Meldungen aus": "/pause",
-    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🧹 Chat löschen": "/clear", "👥 Mitglieder": "/mitglieder",
+    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder",
     "🔑 Einladen": "/code", "🎟 Code eingeben": "/code", "❓ Hilfe": "/hilfe",
 }
 # Tasten, nach denen der Bot erst noch einen Text braucht (Name der Haltestelle, Code)
@@ -744,14 +773,14 @@ def menu_keyboard(cid):
     if is_full(cid):
         rows = [["⭐ Favoriten", "🔍 Suche"], ["🚏 Abfahrten", "⏱ Verspätungen"],
                 ["📌 Verfolgte Fahrten", "🔁 Wiederkehrend"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
-                ["⚙️ Status", "🧹 Chat löschen"]]
+                ["⚙️ Status", "🕒 Auto-Löschen"], ["🧹 Chat löschen", "🎟 Code eingeben"]]
         extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_admin(cid) else [])
         if extra:
             rows.append(extra)
-        rows.append(["🎟 Code eingeben", "❓ Hilfe"])
+        rows.append(["❓ Hilfe"])
     elif cid in data["guests"]:
         rows = [["🎟 Code eingeben", "📌 Verfolgte Fahrten"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
-                ["⚙️ Status", "🧹 Chat löschen"], ["❓ Hilfe"]]
+                ["⚙️ Status", "🕒 Auto-Löschen"], ["🧹 Chat löschen", "❓ Hilfe"]]
     else:
         rows = [["🎟 Code eingeben"]]
     return {"keyboard": [[{"text": t} for t in row] for row in rows], "resize_keyboard": True, "is_persistent": True}
@@ -784,8 +813,96 @@ def cmd_clear(cid, mid):
             break
         bis -= CLEAR_BATCH
         time.sleep(0.3)
+    with msg_lock:
+        msg_log.pop(cid, None)
     send(cid, "Chatverlauf gelöscht. Nachrichten, die älter als 48 Stunden sind, kann Telegram nicht entfernen. "
               "Deine Favoriten und verfolgten Fahrten bleiben erhalten.")
+
+
+def autoclear_text(cid):
+    if autoclear_on(cid):
+        return (f"Auto-Löschen ist AN: Nachrichten in diesem Chat werden nach {AUTOCLEAR_HOURS} Stunden gelöscht "
+                "(Telegram erlaubt höchstens 48). Es gilt für Nachrichten ab dem Einschalten.")
+    return (f"Auto-Löschen ist AUS. Wenn du es einschaltest, löscht der Bot Nachrichten in diesem Chat nach {AUTOCLEAR_HOURS} Stunden "
+            "(Telegram erlaubt höchstens 48).")
+
+
+def autoclear_keyboard(cid):
+    an = autoclear_on(cid)
+    return {"inline_keyboard": [[{"text": "Ausschalten" if an else "Einschalten", "callback_data": "ac:" + ("0" if an else "1")}]]}
+
+
+def set_autoclear(cid, an):
+    global msg_dirty
+    with lock:
+        get_chat(cid)["autoclear"] = an
+        save()
+    if not an:
+        with msg_lock:
+            msg_log.pop(cid, None)
+            msg_dirty = True
+
+
+def cmd_autoclear(cid, arg=""):
+    arg = arg.strip().lower()
+    if arg in ("an", "aus"):
+        set_autoclear(cid, arg == "an")
+    send(cid, autoclear_text(cid), reply_markup=autoclear_keyboard(cid))
+
+
+def handle_autoclear_callback(cb, cid, mid, wert):
+    with lock:
+        if not may_use(cid, action="ac"):
+            return
+    set_autoclear(cid, wert == "1")
+    try:
+        tg("answerCallbackQuery", callback_query_id=cb["id"], text="Gespeichert")
+        tg("editMessageText", chat_id=cid, message_id=mid, text=autoclear_text(cid), reply_markup=autoclear_keyboard(cid))
+    except Exception as e:
+        log("Callback-Antwort fehlgeschlagen:", e)
+
+
+def autoclear_step():
+    """Nachrichten loeschen, die aelter als AUTOCLEAR_HOURS sind, und das Protokoll sichern."""
+    global msg_dirty
+    jetzt = time.time()
+    grenze = AUTOCLEAR_HOURS * 3600
+    faellig = {}
+    with msg_lock:
+        for cid, eintraege in list(msg_log.items()):
+            if not autoclear_on(cid):
+                del msg_log[cid]
+                msg_dirty = True
+                continue
+            alt = [mid for mid, ts in eintraege if jetzt - ts >= grenze]
+            if alt:
+                faellig[cid] = alt
+                msg_log[cid] = [e for e in eintraege if jetzt - e[1] < grenze]
+                msg_dirty = True
+    for cid, ids in faellig.items():
+        for i in range(0, len(ids), CLEAR_BATCH):
+            try:
+                tg("deleteMessages", chat_id=cid, message_ids=ids[i:i + CLEAR_BATCH])
+            except Exception as e:
+                log("Auto-Löschen fehlgeschlagen:", e)
+                break
+            time.sleep(0.3)
+    if msg_dirty:
+        with msg_lock:
+            stand = {str(c): [list(e) for e in l] for c, l in msg_log.items()}
+            msg_dirty = False
+        with lock:
+            data["msglog"] = stand
+            save()
+
+
+def autoclear_loop():
+    while True:
+        try:
+            autoclear_step()
+        except Exception as e:
+            log("Fehler beim Auto-Löschen:", e)
+        time.sleep(300)
 
 
 def cmd_pause(cid, paused):
@@ -806,6 +923,7 @@ def cmd_status(cid):
 
 def handle_message(m):
     cid = m["chat"]["id"]
+    log_message(cid, m.get("message_id"))
     text = (m.get("text") or "").strip()
     if text.startswith("/"):
         awaiting.pop(cid, None)                                  # ein Befehl bricht eine offene Frage ab
@@ -855,6 +973,7 @@ def handle_message(m):
         "/weiter": lambda: cmd_pause(cid, False),
         "/status": lambda: cmd_status(cid),
         "/clear": lambda: cmd_clear(cid, m.get("message_id")),
+        "/autoclear": lambda: cmd_autoclear(cid, arg),
     }.get(cmd, lambda: send(cid, "Unbekannter Befehl. /hilfe"))()
 
 
@@ -1361,6 +1480,8 @@ def handle_callback(cb):
         return handle_members_callback(cb, cid, mid, sid)
     if action == "mi":
         return handle_inviter_callback(cb, cid, mid, sid)
+    if action == "ac":
+        return handle_autoclear_callback(cb, cid, mid, sid)
     if action == "wl":
         return handle_weblogin_callback(cb, cid, mid, sid)
     answer = ""
@@ -1882,12 +2003,17 @@ def main():
         {"command": "pause", "description": "Benachrichtigungen aus"},
         {"command": "weiter", "description": "Benachrichtigungen an"},
         {"command": "clear", "description": "Chatverlauf löschen"},
+        {"command": "autoclear", "description": "Nachrichten nach 47 Stunden löschen"},
         {"command": "status", "description": "Einstellungen"},
     ])
     if cfg["api_port"]:
         cfg["bot_username"] = cfg["bot_username"] or tg("getMe")["username"]
         start_api()
     log("Bot l\u00e4uft.")
+    with msg_lock:
+        for c, l in data.get("msglog", {}).items():
+            msg_log[int(c)] = [list(e) for e in l]
+    threading.Thread(target=autoclear_loop, daemon=True).start()
     threading.Thread(target=monitor_loop, daemon=True).start()
     poll_loop()
 

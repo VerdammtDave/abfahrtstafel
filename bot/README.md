@@ -34,6 +34,7 @@ dem Code, die nächste Nachricht ist die Antwort (wartet 5 Minuten). Ein Befehl 
 | `/jetzt` | aktuelle Verspätungen an deinen Favoriten |
 | `/pause`, `/weiter` | Benachrichtigungen aus/an |
 | `/clear` | Chatverlauf löschen (Telegram erlaubt nur Nachrichten der letzten 48 Stunden). Favoriten und Tracking bleiben |
+| `/autoclear` | Nachrichten automatisch nach 47 Stunden löschen, an oder aus (`/autoclear an`, `/autoclear aus`, oder über die Taste). Gilt ab dem Einschalten |
 | `/status` | Einstellungen und Zeit der letzten Prüfung |
 
 Favoriten sind nur eine Liste für den schnellen Zugriff und melden nichts von selbst.
@@ -165,4 +166,10 @@ Beim Start schreibt der Bot nur "Verwalter gesetzt: ja" oder "nein" ins Log, nie
 
 `python3 bot/test_rechte.py` prüft diese Regeln. Er leitet Befehle und Knopf-Aktionen automatisch aus dem Code ab und schlägt fehl, wenn eine neue Funktion den Verwalter ausschließt.
 **Der Test muss vor jedem Commit laufen.**
+
+### Auto-Löschen
+
+Pro Chat einschaltbar (Taste "Auto-Löschen" oder `/autoclear an`). Telegram erlaubt Bots nur, Nachrichten der letzten 48 Stunden zu löschen, deshalb löscht der Bot nach 47 Stunden.
+Dafür merkt er sich die Nachrichten-IDs und Zeitpunkte der Chats, die es eingeschaltet haben (nicht den Inhalt), höchstens 5000 pro Chat, in `data.json` unter `msglog`.
+Ausgeschaltet werden keine IDs gespeichert. Ein Hintergrunddienst prüft alle 5 Minuten, was fällig ist.
 

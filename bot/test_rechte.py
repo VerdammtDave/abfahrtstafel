@@ -25,6 +25,7 @@ bot.load_config()                      # nur die Standardwerte
 bot.cfg["ipv4_only"] = False
 bot.cfg["data_file"] = "test_data.json"
 
+ORIG_SEND = bot.send                   # echtes send(), andere Tests ersetzen es durch Attrappen
 BESITZER, VERWALTER, MITGLIED, GAST, FREMD = 1001, 2002, 3003, 4004, 5005
 FEHLER = []
 
@@ -40,7 +41,7 @@ def neu(verwalter=VERWALTER):
     bot.data.clear()
     bot.data.update({"owner": BESITZER, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {},
                      "guests": [GAST], "shares": {}, "members": [MITGLIED], "invites": {}, "names": {},
-                     "sessions": {}, "inviters": []})
+                     "sessions": {}, "inviters": [], "msglog": {}})
     bot.cfg["verwalter_id"] = verwalter
 
 
@@ -362,6 +363,104 @@ def menue_ablauf(aufrufe, nachrichten):
     druecke(BESITZER, "👥 Mitglieder")
     druecke(VERWALTER, "👥 Mitglieder")
     pruefe(("cmd_mitglieder", BESITZER) in aufrufe and ("cmd_mitglieder", VERWALTER) in aufrufe, "Besitzer oder Verwalter erreicht Mitglieder nicht")
+
+
+def test_auto_loeschen():
+    import time as zeit
+    neu()
+    bot.save = lambda: None
+    bot.time.sleep = lambda s: None
+    bot.msg_log.clear()
+    zaehler = [100]
+
+    def fake_tg(methode, **p):
+        aufrufe.append((methode, p))
+        if methode == "sendMessage":
+            zaehler[0] += 1
+            return {"message_id": zaehler[0]}
+
+    aufrufe = []
+    bot.tg = fake_tg
+    bot.send = ORIG_SEND
+    pruefe(bot.AUTOCLEAR_HOURS < 48, "Auto-Loeschen liegt nicht unter der 48-Stunden-Grenze von Telegram")
+    for wer in (BESITZER, VERWALTER, MITGLIED, GAST):
+        pruefe(bot.may_use(wer, cmd="/autoclear") and bot.may_use(wer, action="ac"), f"/autoclear ist fuer {wer} nicht erlaubt")
+    pruefe(not bot.may_use(FREMD, cmd="/autoclear") and not bot.may_use(FREMD, action="ac"), "Fremde duerfen /autoclear nutzen")
+    # Standard: aus, es wird nichts gemerkt
+    bot.send(BESITZER, "x")
+    pruefe(not bot.msg_log, "ohne Auto-Loeschen werden Nachrichten-IDs gespeichert")
+    # Einschalten per Befehl: ab jetzt wird gemerkt (gesendet und empfangen)
+    bot.cmd_autoclear(BESITZER, "an")
+    pruefe(bot.autoclear_on(BESITZER), "Auto-Loeschen liess sich nicht einschalten")
+    bot.send(BESITZER, "y")
+    bot.log_message(BESITZER, 7)
+    ids = [e[0] for e in bot.msg_log.get(BESITZER, [])]
+    pruefe(len(ids) >= 2 and 7 in ids, "gesendete oder empfangene Nachrichten werden nicht gemerkt")
+    pruefe(MITGLIED not in bot.msg_log, "ein anderer Chat wird mitprotokolliert")
+    # Ablauf: nur Nachrichten ab 47 Stunden werden geloescht
+    jetzt = zeit.time()
+    bot.msg_log[BESITZER] = [[1, jetzt - 47 * 3600 - 10], [2, jetzt - 170000], [3, jetzt - 1000], [4, jetzt - 46 * 3600]]
+    aufrufe.clear()
+    bot.autoclear_step()
+    geloescht = sorted(i for m, p in aufrufe if m == "deleteMessages" for i in p["message_ids"])
+    pruefe(geloescht == [1, 2], f"falsche Nachrichten geloescht: {geloescht}")
+    pruefe(sorted(e[0] for e in bot.msg_log[BESITZER]) == [3, 4], "neuere Nachrichten wurden aus dem Protokoll genommen")
+    pruefe(sorted(e[0] for e in bot.data["msglog"][str(BESITZER)]) == [3, 4], "das Protokoll wird nicht in data gesichert")
+    # Batches
+    bot.msg_log[BESITZER] = [[i, jetzt - 200000] for i in range(1, 251)]
+    aufrufe.clear()
+    bot.autoclear_step()
+    pruefe(len(aufrufe) == 3 and all(len(p["message_ids"]) <= 100 for _, p in aufrufe), "Batches sind falsch geschnitten")
+    pruefe(all(p["chat_id"] == BESITZER for _, p in aufrufe), "Auto-Loeschen loescht in einem fremden Chat")
+    # Obergrenze
+    bot.msg_log.clear()
+    for i in range(bot.AUTOCLEAR_MAX + 500):
+        bot.log_message(BESITZER, i + 1)
+    pruefe(len(bot.msg_log[BESITZER]) == bot.AUTOCLEAR_MAX, "das Protokoll waechst ohne Grenze")
+    # Ausschalten raeumt auf
+    bot.cmd_autoclear(BESITZER, "aus")
+    pruefe(not bot.autoclear_on(BESITZER) and BESITZER not in bot.msg_log, "Ausschalten raeumt das Protokoll nicht auf")
+    bot.msg_log[BESITZER] = [[1, jetzt - 200000]]
+    aufrufe.clear()
+    bot.autoclear_step()
+    pruefe(not any(m == "deleteMessages" for m, _ in aufrufe), "bei ausgeschaltetem Auto-Loeschen wird geloescht")
+    # Knopf: jeder fuer sich, Fremde nicht
+    karte = {"id": "x", "message": {"chat": {"id": MITGLIED}, "message_id": 1}}
+    bot.handle_autoclear_callback(karte, MITGLIED, 1, "1")
+    pruefe(bot.autoclear_on(MITGLIED), "Knopf schaltet Auto-Loeschen nicht ein")
+    bot.handle_autoclear_callback(karte, FREMD, 1, "1")
+    pruefe(not bot.autoclear_on(FREMD) and str(FREMD) not in bot.data["chats"], "Fremde konnten Auto-Loeschen einschalten")
+    bot.handle_autoclear_callback(karte, MITGLIED, 1, "0")
+    pruefe(not bot.autoclear_on(MITGLIED), "Knopf schaltet Auto-Loeschen nicht aus")
+    # /clear leert das Protokoll
+    bot.cmd_autoclear(BESITZER, "an")
+    bot.log_message(BESITZER, 5)
+    bot.rate_hits.clear()
+    bot.cmd_clear(BESITZER, 10)
+    pruefe(not bot.msg_log.get(BESITZER) or all(e[0] > 10 for e in bot.msg_log[BESITZER]), "/clear laesst alte IDs im Protokoll")
+    bot.send = lambda cid, text, **k: None
+
+
+def test_abfahrten_fragt_nach_haltestelle():
+    neu()
+    suchen, texte = [], []
+    bot.save = lambda: None
+    bot.send = lambda cid, text, **k: texte.append(str(text))
+    bot.search_stops = lambda t: suchen.append(t) or []
+    bot.awaiting.clear()
+
+    def sende(cid, text):
+        bot.handle_message({"chat": {"id": cid}, "text": text, "from": {"first_name": "T"}})
+
+    sende(MITGLIED, "🚏 Abfahrten")
+    pruefe(MITGLIED in bot.awaiting and "Haltestelle" in texte[-1], "Taste Abfahrten fragt nicht nach der Haltestelle")
+    sende(MITGLIED, "Bocholt")
+    pruefe(suchen == ["Bocholt"], f"Antwort wurde nicht als Haltestelle gesucht: {suchen}")
+    pruefe(MITGLIED not in bot.awaiting, "offene Frage blieb bestehen")
+    sende(MITGLIED, "noch ein Text")
+    pruefe(suchen == ["Bocholt"], "freier Text loest ohne Taste eine Suche aus")
+    sende(GAST, "🚏 Abfahrten")
+    pruefe(GAST not in bot.awaiting, "Gast bekam eine Frage fuer Abfahrten")
 
 
 def test_clear_befehl():
