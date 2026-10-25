@@ -1,6 +1,7 @@
 {
   "bot_token": "DEIN_TOKEN_VON_BOTFATHER",
   "owner_id": 0,
+  "verwalter_id": 0,
   "poll_seconds": 60,
   "default_threshold_min": 5,
   "window_min": 120,

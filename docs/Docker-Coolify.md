@@ -27,6 +27,7 @@ Browser ──► https://abfahrtstafel.deine-domain.de ──► web (nginx) �
 3. Unter **Environment Variables** eintragen (beide als Runtime-Variable):
    - `BOT_TOKEN` = der Token von BotFather
    - `BOT_OWNER_ID` = deine Chat-ID
+   - optional `VERWALTER_ID` = Chat-ID der Person, die den Server betreibt (Rolle mit immer mindestens den Rechten des Besitzers, siehe `bot/README.md`)
 4. Beim Dienst **web** die Domain eintragen: `https://abfahrtstafel.deine-domain.de` (Port 80). Der Dienst **bot** bekommt **keine** Domain.
 5. **Deploy**. Im Log des Dienstes `bot` muss „Web-API auf 0.0.0.0:8787“ und „Bot läuft.“ stehen.
 6. Öffne die Seite, klicke „Mit Telegram anmelden“ und bestätige im Bot mit „Ja, anmelden“.
@@ -56,3 +57,14 @@ Neuen Stand pushen und in Coolify **Redeploy** klicken (oder Auto-Deploy per Web
 - Anmeldeversuche sind pro IP gedrosselt (10 pro 10 Minuten).
 - Die Website sendet strenge Header (CSP, `X-Frame-Options`, …). Sie darf nur Transitous und die eigene Adresse kontaktieren.
 - Besitzer ist fest `BOT_OWNER_ID`. Weitere Personen kommen nur per Einladungscode (`/code`).
+
+## Preview-Deployments (Pull Requests)
+
+Coolify kann zu jedem Pull Request eine eigene Vorschau starten (`{{pr_id}}.preview.deine-domain.de`). Dafür braucht es einen Wildcard-DNS-Eintrag
+`*.preview` auf den Server. **Achtung:** Coolify kopiert die Produktions-Variablen in den Bereich „Preview deployments“, also auch den
+`BOT_TOKEN`. Ein zweiter Bot mit demselben Token stört den echten Bot (Telegram erlaubt nur einen pro Token).
+
+- **Ohne Bot im Preview (üblich):** Im Bereich „Preview deployments“ der Environment Variables `BOT_TOKEN` und `BOT_OWNER_ID` **löschen**.
+  Der Bot bleibt dann aus (`BOT_IDLE_WITHOUT_TOKEN`), die Website der Vorschau läuft trotzdem, nur ohne Telegram-Anmeldung.
+- **Mit Test-Bot:** Dort stattdessen den Token eines zweiten Bots von `@BotFather` eintragen.
+

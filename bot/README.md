@@ -107,3 +107,52 @@ Weitere Einstellungen in `config.json` bzw. Umgebungsvariablen: `owner_id`/`BOT_
 - Verspätungen gibt es nur für Linien, für die Transitous Echtzeitdaten hat.
 - Die Favoriten des Bots sind getrennt von denen im Browser (diese liegen nur im Browser).
 - Einstellungen und Zustand liegen in `data.json`, die Konfiguration in `config.json`.
+
+## Rollen und der Verwalter
+
+| Rolle | Wer | Wie wird man es |
+|---|---|---|
+| **Verwalter** | die Person, die den Bot technisch betreibt und den Server besitzt | nur über `VERWALTER_ID` (oder `verwalter_id` in `config.json`) |
+| **Besitzer** | Chef im Bot, verwaltet Inhalte und Mitglieder | `BOT_OWNER_ID` bzw. `owner_id` (sonst der Erste mit `/start`) |
+| **Mitglied** | eingeladene Person | Einladungscode (`/code`) |
+| **Gast** | sieht nur eine geteilte Verbindung | Code einer geteilten Verbindung |
+
+Der Besitzer ist eine andere Person als der Verwalter und behält seine normalen Rechte im Bot.
+
+| Aktion | Verwalter | Besitzer | Mitglied | Gast |
+|---|---|---|---|---|
+| Suchen, Favoriten, Tracking, wiederkehrende Fahrten | ja | ja | ja | nein |
+| Geteilte Verbindung ansehen und verfolgen | ja | ja | ja | ja |
+| Einladungscodes erzeugen, `/mitglieder`, Mitglieder entfernen | ja | ja | nein | nein |
+| Braucht eine Einladung | nein | nein | ja | ja |
+| Kann entfernt, gesperrt oder eingeschränkt werden | **nie** | nur durch den Betreiber am Server | durch Besitzer und Verwalter | durch Ablauf des Codes |
+| Server, Konfiguration, Token, Dienste, Logs | nur am Server selbst | nein | nein | nein |
+
+### Eigene Telegram-Nummer herausfinden
+
+Schreibe in Telegram dem Bot `@userinfobot`. Er antwortet mit deiner ID, einer Zahl wie `123456789`.
+
+### VERWALTER_ID setzen
+
+- **systemd:** In `/etc/systemd/system/abfahrtsbot.service` unter `[Service]` die Zeile `Environment=VERWALTER_ID=123456789` ergänzen, dann `systemctl daemon-reload && systemctl restart abfahrtsbot`.
+  Alternativ eine Datei mit `EnvironmentFile=` nutzen, die nur für root lesbar ist.
+- **Coolify / Docker Compose:** Unter Environment Variables `VERWALTER_ID` mit der Zahl anlegen und neu deployen.
+- **config.json:** `"verwalter_id": 123456789`. Die Umgebungsvariable hat Vorrang. Ist beides leer oder keine gültige Zahl, gibt es keinen Verwalter.
+
+Beim Start schreibt der Bot nur "Verwalter gesetzt: ja" oder "nein" ins Log, nie die ID.
+
+### Regeln für spätere Änderungen
+
+1. Der Verwalter wird ausschließlich über `VERWALTER_ID` (oder `verwalter_id`) bestimmt. Kein Befehl, Knopf oder API-Aufruf vergibt, ändert oder entzieht die Rolle, auch nicht der Besitzer. Nichts davon steht in `data.json`.
+2. Der Verwalter hat immer mindestens alle Rechte des Besitzers, auch bei künftigen Befehlen, Knöpfen und Web-API-Funktionen. Jede neue Rechteprüfung muss ihn einschließen (über `is_admin`, `is_full` und `may_use`, nie nur `is_owner`).
+3. Er kann nicht entfernt, gesperrt, pausiert, stummgeschaltet oder eingeschränkt werden. Entfernen- und Sperr-Funktionen lehnen seine ID serverseitig ab. Seine Website-Sitzungen werden nie beendet, wenn andere entfernt werden.
+4. Besitzer, Mitglieder und Gäste bekommen keine Funktion, die Server, Konfiguration oder Betrieb betrifft: kein Ändern von `config.json`, Umgebungsvariablen, `VERWALTER_ID`, Token, Ports, Dateien oder Diensten, kein Neustarten, Updaten oder Ausführen von Befehlen, kein Auslesen von Konfiguration, Token oder Logs. Neue Befehle dieser Art kommen nur in `VERWALTER_COMMANDS`.
+5. Der Bot gibt Token, Verwalter-ID und Dateipfade nie in Nachrichten, Fehlermeldungen oder API-Antworten aus.
+6. Der Betreiber behält per Server immer die Kontrolle (`data.json` und `config.json` bearbeiten, Dienst neu starten). Der Bot nimmt ihm nie Daten oder Rechte weg.
+7. Alle Zugriffsprüfungen laufen serverseitig im Bot, nie allein auf Basis von Callback-Daten.
+
+### Test
+
+`python3 bot/test_rechte.py` prüft diese Regeln. Er leitet Befehle und Knopf-Aktionen automatisch aus dem Code ab und schlägt fehl, wenn eine neue Funktion den Verwalter ausschließt.
+**Der Test muss vor jedem Commit laufen.**
+

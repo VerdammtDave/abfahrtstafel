@@ -649,12 +649,35 @@ GUEST_HELP = (
 )
 
 
-OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung nur fuer den Besitzer
+OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung nur fuer den Besitzer (und den Verwalter)
+VERWALTER_COMMANDS = set()                                # Befehle rund um Server und Betrieb: NUR der Verwalter. Aktuell gibt es keine.
 INVITE_TTL = 24 * 3600                                    # Einladungscode gilt 24 h
 
 
 def is_owner(cid):
     return data["owner"] == cid
+
+
+# REGELN FUER SPAETERE AENDERUNGEN (siehe auch CLAUDE.md und bot/README.md)
+# 1. Der Verwalter betreibt den Bot und besitzt den Server. Er wird NUR ueber VERWALTER_ID (Umgebung) oder
+#    "verwalter_id" (config.json) bestimmt. Kein Befehl, kein Knopf, keine API vergibt, aendert oder entzieht die Rolle.
+#    Nichts davon steht in data.json.
+# 2. Jede neue Rechtepruefung muss den Verwalter einschliessen. Dafuer is_admin (Besitzer oder Verwalter) oder may_use
+#    nutzen, nie is_owner allein. Der Test bot/test_rechte.py schlaegt sonst fehl.
+# 3. Der Verwalter kann nicht entfernt, gesperrt, pausiert, stummgeschaltet oder eingeschraenkt werden. Entfernen- und
+#    Sperr-Funktionen lehnen seine ID serverseitig ab.
+# 4. Besitzer und Mitglieder bekommen keine Funktion, die Server, Konfiguration oder Betrieb betrifft (config.json,
+#    Umgebung, Token, Ports, Dateien, Dienste, Neustart, Befehle, Logs). Neue Befehle dieser Art kommen nur in
+#    VERWALTER_COMMANDS.
+# 5. Token, Verwalter-ID und Dateipfade erscheinen nie in Nachrichten, Fehlermeldungen oder API-Antworten.
+# 6. Der Bot nimmt dem Betreiber nie Daten oder Rechte weg. Er kann data.json und config.json immer bearbeiten.
+def is_verwalter(cid):
+    return bool(cfg["verwalter_id"]) and cid == cfg["verwalter_id"]
+
+
+def is_admin(cid):
+    """Besitzer oder Verwalter: darf Einladungscodes erzeugen und Mitglieder verwalten."""
+    return is_owner(cid) or is_verwalter(cid)
 
 
 def display_name(user):
@@ -667,28 +690,32 @@ def display_name(user):
 
 
 def who(cid):
+    if is_verwalter(cid):
+        return data["names"].get(str(cid)) or "Verwalter"     # die ID des Verwalters wird nie ausgegeben
     return data["names"].get(str(cid)) or f"Chat {cid}"
 
 
 def is_full(cid):
-    """Besitzer und eingeladene Mitglieder: voller Funktionsumfang."""
-    return is_owner(cid) or cid in data["members"]
+    """Besitzer, Verwalter und eingeladene Mitglieder: voller Funktionsumfang."""
+    return is_admin(cid) or cid in data["members"]
 
 
 def may_use(cid, cmd=None, action=None):
-    """Besitzer darf alles, Mitglieder (Einladungscode) alles ausser der Verwaltung.
-    Gaeste (Code einer geteilten Verbindung) nur Verbindungen ansehen und verfolgen."""
-    if is_owner(cid):
+    """Verwalter darf alles. Besitzer alles ausser den Verwalter-Befehlen, Mitglieder (Einladungscode) alles ausser der
+    Verwaltung. Gaeste (Code einer geteilten Verbindung) nur Verbindungen ansehen und verfolgen."""
+    if is_verwalter(cid):
         return True
+    if is_owner(cid):
+        return cmd not in VERWALTER_COMMANDS if cmd else True
     if cid in data["members"]:
-        return cmd not in OWNER_COMMANDS if cmd else action != "mrm"
+        return cmd not in OWNER_COMMANDS | VERWALTER_COMMANDS if cmd else action != "mrm"
     if cid in data["guests"]:
         return cmd in GUEST_COMMANDS if cmd else action in GUEST_ACTIONS
     return False
 
 
 def cmd_help(cid):
-    send(cid, HELP if is_owner(cid) else GUEST_HELP)
+    send(cid, HELP if is_admin(cid) else GUEST_HELP)
 
 
 def cmd_pause(cid, paused):
@@ -1041,26 +1068,38 @@ def create_invite(cid):
               "Der Code gilt 24 Stunden und nur für eine Person.", parse_mode="HTML")
 
 
+def removable_members():
+    return [m for m in data["members"] if not is_verwalter(m)]       # der Verwalter ist nie entfernbar
+
+
 def members_keyboard():
     return {"inline_keyboard": [[{"text": f"\U0001f5d1 {who(m)} entfernen"[:60], "callback_data": f"mrm:{m}"}]
-                                for m in data["members"]]}
+                                for m in removable_members()]}
 
 
 def cmd_mitglieder(cid):
     with lock:
-        if not data["members"]:
+        if not is_admin(cid):
+            return
+        lines = [f"• {who(m)}" for m in removable_members()]
+        if cfg["verwalter_id"]:
+            known = data["names"].get(str(cfg["verwalter_id"]))
+            lines.append(f"• {known} (Verwalter)" if known else "• Verwalter")
+        if not lines:
             return send(cid, "Noch niemand eingeladen. /code erzeugt einen Einladungscode.")
-        kb = members_keyboard()
-    send(cid, "Eingeladene Personen:\n" + "\n".join("• " + who(m) for m in data["members"]) +
-         "\n\nAntippen entfernt den Zugang.", reply_markup=kb)
+        kb = members_keyboard() if removable_members() else None
+    send(cid, "Eingeladene Personen:\n" + "\n".join(lines) +
+         ("\n\nAntippen entfernt den Zugang." if kb else ""), reply_markup=kb)
 
 
 def handle_members_callback(cb, cid, mid, member):
     with lock:
-        if not is_owner(cid):
+        if not is_admin(cid):
             return
         m = int(member) if member.lstrip("-").isdigit() else None
-        if m in data["members"]:
+        if m is not None and is_verwalter(m):
+            answer = "Nicht möglich"                          # der Verwalter kann nicht entfernt werden
+        elif m in data["members"]:
             data["members"].remove(m)
             data["chats"].pop(str(m), None)               # Tracking und Favoriten der Person gehen mit
             data["state"].pop(str(m), None)
@@ -1070,7 +1109,7 @@ def handle_members_callback(cb, cid, mid, member):
             answer = "Zugang entfernt"
         else:
             answer = "Nicht mehr vorhanden"
-        kb = members_keyboard() if data["members"] else None
+        kb = members_keyboard() if removable_members() else None
     try:
         tg("answerCallbackQuery", callback_query_id=cb["id"], text=answer)
         if kb:
@@ -1084,7 +1123,7 @@ def handle_members_callback(cb, cid, mid, member):
 def cmd_code(cid, arg, user=None):
     code = arg.strip().upper().replace(" ", "")
     if not code:
-        if is_owner(cid):
+        if is_admin(cid):
             return create_invite(cid)
         return send(cid, "Nutzung: /code ABC234")
     now = time.time()
@@ -1114,7 +1153,7 @@ def cmd_code(cid, arg, user=None):
         if not e:
             code_fails[cid] = fails + [now]
             return send(cid, "Code ung\u00fcltig oder abgelaufen.")
-        if not is_owner(cid) and cid not in data["guests"]:
+        if not is_admin(cid) and cid not in data["guests"]:
             data["guests"].append(cid)                    # Zugriff nur auf geteilte Verbindungen
         get_chat(cid)
         save()
@@ -1628,12 +1667,22 @@ def start_api():
 
 # ---------- Start ----------
 
+def parse_id(value):
+    """Telegram-Chat-ID als Zahl. Alles andere (leer, Text, 0, Kommazahl) ergibt 0, also keine Rolle."""
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return 0
+
+
 def load_config():
     path = os.path.join(HERE, "config.json")
     cfg.update({"bot_token": "", "poll_seconds": 60, "default_threshold_min": 5,
                 "window_min": 120, "data_file": "data.json", "ipv4_only": True, "routine_lead_min": 60,
                 "api_port": 8787, "api_host": "127.0.0.1", "web_origin": "", "bot_username": "",
-                "owner_id": 0, "trust_proxy": False})
+                "owner_id": 0, "verwalter_id": 0, "trust_proxy": False})
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             cfg.update(json.load(fh))
@@ -1643,6 +1692,7 @@ def load_config():
                      ("BOT_WEB_ORIGIN", "web_origin"), ("BOT_USERNAME", "bot_username")):
         cfg[key] = os.environ.get(env) or cfg[key]
     cfg["owner_id"] = int(os.environ.get("BOT_OWNER_ID") or cfg["owner_id"] or 0)
+    cfg["verwalter_id"] = parse_id(os.environ.get("VERWALTER_ID") or cfg["verwalter_id"])
     cfg["trust_proxy"] = os.environ.get("BOT_TRUST_PROXY", str(cfg["trust_proxy"])).lower() in ("1", "true", "yes")
     if cfg["ipv4_only"]:
         force_ipv4()
@@ -1665,6 +1715,11 @@ def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--selftest":
         return selftest(sys.argv[2])
     if not cfg["bot_token"] or cfg["bot_token"].startswith("DEIN"):
+        if os.environ.get("BOT_IDLE_WITHOUT_TOKEN", "").lower() == "true":
+            # z. B. Preview-Deployment ohne eigenen Bot: nichts tun, aber nicht ständig neu starten
+            log("Kein BOT_TOKEN gesetzt: Der Bot bleibt aus. Die Website läuft weiter.")
+            while True:
+                time.sleep(3600)
         sys.exit("Kein bot_token. Trage ihn in config.json ein (oder setze BOT_TOKEN).")
     load()
     for k in [k for k in data["sessions"] if len(k) != 64]:     # alte Sitzungen mit Klartext-Token ungueltig machen
@@ -1673,6 +1728,7 @@ def main():
         data["owner"] = cfg["owner_id"]                          # Besitzer fest vorgegeben, niemand kann ihn per /start uebernehmen
         get_chat(cfg["owner_id"])
     save()
+    log("Verwalter gesetzt: " + ("ja" if cfg["verwalter_id"] else "nein"))     # nie die ID ausgeben
     if data["owner"] is None:
         log("WARNUNG: Kein Besitzer festgelegt. Wer dem Bot zuerst /start schreibt, wird Besitzer. BOT_OWNER_ID setzen!")
     tg("setMyCommands", commands=[
