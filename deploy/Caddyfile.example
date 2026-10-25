@@ -1,0 +1,14 @@
+# Nach /etc/caddy/Caddyfile kopieren.
+# Standard: nur lokal auf Port 8080 (HTTPS macht dann z. B. Tailscale Funnel).
+# Mit eigener Domain und Portfreigabe die erste Zeile durch die Adresse ersetzen, z. B. abfahrten.example.de {
+:8080 {
+	# Nur mit Bot: /api an die Bot-API weiterleiten. Ohne Bot diesen Block löschen.
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy 127.0.0.1:8787
+	}
+	handle {
+		root * /var/www/bahnhofstafel
+		file_server
+	}
+}

@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abfahrtstafel</title>
+<style>
+  :root {
+    --navy: #000080; --yellow: #ffff00; --white: #fff; --late: #ffa500;
+    --bar-bg: #00005c; --line: #00005c; --zeit-bg: #fff; --zeit-fg: var(--navy);
+    --head-bg: var(--yellow); --head-fg: #000;
+    --accent: var(--yellow); --tab-ind: var(--yellow); --tab-on: var(--navy);
+    --chip-ind: var(--white); --chip-on: var(--navy); --ring: rgba(255,255,0,.35);
+    --st-yellow: var(--yellow); --st-orange: #ff9900; --st-red: #ff3b30; --star: var(--yellow);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--navy); color: var(--white); font-family: Arial, Helvetica, sans-serif; }
+  button { font-family: inherit; cursor: pointer; position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent;
+    transition: transform .2s cubic-bezier(.22,1,.36,1), color .3s ease, border-color .3s ease, background-color .3s ease, box-shadow .3s ease; }
+  button:active { transform: scale(.95) !important; }
+
+  /* Umschalter: Der gewählte Knopf blendet weich in seine Farbe, der alte blendet aus. */
+  .switch { display: inline-flex; gap: 10px; align-items: center; }
+
+  /* Animationen */
+  .bar button:hover, .foot button:hover, .back:hover { transform: translateY(-2px); }
+  @keyframes pop { 0% { transform: scale(1); } 35% { transform: scale(1.6) rotate(-12deg); } 100% { transform: scale(1); } }
+  .pop { animation: pop .5s cubic-bezier(.22,1,.36,1); }
+  @keyframes drop { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
+  .bar > * { animation: drop .6s cubic-bezier(.22,1,.36,1) backwards; }
+  .bar > :nth-child(2) { animation-delay: .07s; } .bar > :nth-child(3) { animation-delay: .14s; }
+  .bar > :nth-child(5) { animation-delay: .21s; } .bar > :nth-child(6) { animation-delay: .28s; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { display: inline-block; }
+  #refresh.loading .spin { animation: spin .8s linear infinite; }
+  #themes .ico { display: inline-block; }
+  #themes .chip.active .ico { animation: icospin .7s cubic-bezier(.22,1,.36,1); }
+  @keyframes icospin { 0% { transform: rotate(-200deg) scale(.4); opacity: 0; } 60% { transform: rotate(15deg) scale(1.25); opacity: 1; } 100% { transform: none; } }
+  #favCount { display: inline-block; }
+  .search input { transition: box-shadow .25s, border-color .25s, background-color .25s; }
+  .search input:focus { outline: none; box-shadow: 0 0 0 4px var(--ring); }
+  html.theming :not(.mq):not(.ico) { transition: background-color .45s ease, color .45s ease, border-color .45s ease, transform .2s cubic-bezier(.22,1,.36,1) !important; }
+  @media (prefers-reduced-motion: reduce) {
+    *:not(.mq), *:not(.mq)::before, *:not(.mq)::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+
+  .bar { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: var(--bar-bg); flex-wrap: wrap; }
+  .bar .tab { background: none; border: 2px solid var(--yellow); color: var(--yellow); font-size: 16px; font-weight: bold; padding: 4px 12px; }
+  .bar .tab.active { background: var(--tab-ind); color: var(--tab-on); }
+  .bar .sp { flex: 1; }
+  .search { position: relative; flex: 1 1 260px; max-width: 420px; }
+  .search input { width: 100%; font: 16px Arial, sans-serif; padding: 5px 8px; border: 2px solid var(--white); background: var(--white); color: #000; border-radius: 0; }
+  .suggest { position: absolute; left: 0; right: 0; top: 100%; background: var(--white); color: #000; z-index: 10; border: 2px solid var(--yellow); }
+  .suggest button { display: block; width: 100%; text-align: left; font-size: 16px; padding: 6px 8px; border: 0; border-bottom: 1px solid #ccc; background: none; color: #000; }
+  .suggest button:hover { background: var(--yellow); }
+  .chip { background: none; border: 2px solid var(--white); color: var(--white); font-size: 14px; padding: 3px 10px; }
+  .chip.active { background: var(--chip-ind); color: var(--chip-on); }
+
+  .head { display: flex; align-items: center; padding: 4px 8px 4px 4px; min-height: 70px; gap: 12px; }
+  .clock { font-size: 40px; font-weight: bold; width: 150px; font-variant-numeric: tabular-nums; }
+  .head h1 { flex: 1; text-align: center; margin: 0; font-size: 36px; }
+  .star { background: none; border: 0; color: var(--white); font-size: 40px; line-height: 1; width: 150px; text-align: right; }
+  .star.on { color: var(--star); }
+
+  .cols, .row { display: grid; grid-template-columns: 150px minmax(140px, 1.1fr) 2.4fr 110px; }
+  .cols { background: var(--head-bg); color: var(--head-fg); font-size: 32px; font-weight: bold; height: 52px; align-items: center; }
+  .cols div { padding: 0 6px 0 4px; }
+  .cols div:last-child { text-align: right; padding-right: 8px; }
+
+  .row { min-height: 72px; border-bottom: 1px solid var(--line); align-items: stretch; }
+  .zeit { background: var(--zeit-bg); color: var(--zeit-fg); padding: 2px 4px 2px 0; }
+  .zeit b { display: block; font-weight: normal; font-size: 32px; line-height: 38px; font-variant-numeric: tabular-nums; }
+  .zeit small { font-size: 15px; display: block; line-height: 18px; white-space: nowrap; overflow: hidden; padding-left: 4px; }
+  .nach { font-weight: bold; font-size: 25px; padding: 6px 8px 0 8px; align-self: start; line-height: 30px; }
+  .ueber { font-size: 18px; padding: 10px 8px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: start; }
+  .mq { display: inline-block; white-space: nowrap; }
+  .mq .end { display: none; font-style: normal; color: var(--white); font-weight: normal; margin: 0 .7em; }
+  .mq.run .end { display: inline; }
+  .mq.run { animation: slide var(--dur) linear infinite; }
+  @keyframes slide { from { transform: translateX(0); } to { transform: translateX(var(--dist)); } }
+  .gleis small { display: block; font-size: 13px; font-weight: normal; line-height: 14px; opacity: .75; }
+  .cols .gh { font-size: 17px; line-height: 20px; }
+  .gleis { font-weight: bold; font-size: 28px; text-align: right; padding: 6px 12px 0 0; overflow-wrap: anywhere; line-height: 30px; }
+  .status { display: block; color: var(--st-yellow); font-size: 18px; line-height: 22px; }
+  .status.orange { color: var(--st-orange); }
+  .status.red { color: var(--st-red); }
+  .cancel .nach, .cancel .zeit b { text-decoration: line-through; }
+  .msg { padding: 24px 12px; font-size: 22px; }
+  .foot { display: flex; align-items: center; justify-content: space-between; padding: 8px; font-size: 14px; }
+  .foot button { background: none; border: 2px solid var(--white); color: var(--white); padding: 3px 10px; font-size: 14px; }
+  .sep { height: 14px; background: var(--bar-bg); }
+  .favlist .cols { font-size: 32px; }
+  .favitem { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--white); text-align: left; font-size: 25px; font-weight: bold; padding: 18px 12px; }
+  .favitem:hover, .favitem:focus-visible { background: var(--white); color: var(--navy); outline: none; }
+  .favitem span { color: var(--yellow); font-size: 28px; }
+  .favitem:hover span { color: var(--navy); }
+  .back { margin: 8px; background: none; border: 2px solid var(--yellow); color: var(--yellow); font-size: 16px; font-weight: bold; padding: 4px 12px; }
+  .hidden { display: none; }
+
+  /* Telegram-Anbindung: Glocke an Fahrten, Anmeldefenster, Tracking-Liste */
+  .bell { font-style: normal; font-size: 16px; margin-left: 6px; vertical-align: middle; opacity: .3; filter: grayscale(1); }
+  .bell.on { opacity: 1; filter: none; }
+  .row.trackable { cursor: pointer; }
+  .alertlink { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  /* Das „i“ wird aus Punkt und Strich gezeichnet, damit es exakt mittig sitzt (Schriftzeichen haben eigene Abstände). */
+  .alertlink.info { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; box-sizing: border-box;
+    text-decoration: none; margin-left: 8px; vertical-align: middle; width: 20px; height: 20px; border-radius: 50%;
+    color: var(--zeit-fg); border: 1.5px solid currentColor; opacity: .75; transition: opacity .15s; }
+  .alertlink.info::before, .alertlink.info::after { content: ""; background: currentColor; width: 2.5px; border-radius: 1px; }
+  .alertlink.info::before { height: 2.5px; border-radius: 50%; }
+  .alertlink.info::after { height: 7px; }
+  .alertlink.info:hover { opacity: 1; }
+  .modal .altext { text-align: left; white-space: pre-line; margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); font-size: 14px; max-height: 40vh; overflow: auto; }
+  .modal .alhead { margin: 0 0 8px; font-size: 17px; }
+  .modal .alnote { margin: 0 0 6px; font-size: 13px; opacity: .8; }
+  .modal .altext a { color: var(--accent); }
+  .sub { display: block; font-size: 14px; font-weight: normal; line-height: 20px; opacity: .75; }
+  .untrack { background: none; border: 1px solid currentColor; color: inherit; border-radius: 8px; font-size: 16px; padding: 2px 9px; }
+  .favitem.plain { cursor: default; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal.hidden { display: none; }
+  .modal .card { background: var(--card, var(--navy)); color: var(--white); border: 1px solid var(--border, var(--white)); border-radius: 14px;
+    padding: 22px; max-width: 360px; width: calc(100% - 32px); text-align: center; font-size: 16px; line-height: 1.4; }
+  .modal .card a.go { display: inline-block; margin: 12px 0; padding: 9px 16px; border-radius: 10px; background: var(--accent); color: var(--tab-on); font-weight: 600; text-decoration: none; }
+  .modal .card button { margin-top: 6px; background: none; border: 1px solid var(--border, var(--white)); color: var(--white); border-radius: 10px; padding: 6px 14px; font-size: 14px; }
+
+  /* ---------- Dunkel und Hell: gleiches Layout, eigene Farben ---------- */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --navy: #0c0b10; --accent: #d878c8; --yellow: #d878c8; --white: #ece9f2; --late: #ff9f1a;
+    --bar-bg: #131017; --line: #211b28; --zeit-bg: transparent; --zeit-fg: #ffffff;
+    --head-bg: #131017; --head-fg: #9a8fa8;
+    --surface: #1b1722; --surface-hi: #272030; --border: #382d44; --muted: #a39bb2;
+    --card: #100e14; --row-hover: #17131d; --shadow: 0 12px 32px rgba(0,0,0,.5); --ring: rgba(216,120,200,.30);
+    --tab-ind: #d878c8; --tab-on: #1a0f19; --chip-ind: #d878c8; --chip-on: #1a0f19; --star: #e58bd6;
+    --st-yellow: #ffd23f; --st-orange: #ff9f1a; --st-red: #ff5a4f;
+  }
+  html[data-theme="classic"] {
+    color-scheme: dark;
+    --navy: #000080; --accent: #ffff00; --yellow: #ffff00; --white: #ffffff; --late: #ffa31a;
+    --bar-bg: #00005c; --line: #1a1a92; --zeit-bg: #ffffff; --zeit-fg: #000080; --zeit-sub: #4a4a9a; --ueber-fg: #ffffff;
+    --head-bg: #ffff00; --head-fg: #000000;
+    --surface: #0b0b94; --surface-hi: #1818b4; --border: #3a3ab8; --muted: #b8bbff;
+    --card: #00006e; --row-hover: #0a0a8c; --shadow: 0 12px 32px rgba(0,0,40,.55); --ring: rgba(255,255,0,.35);
+    --tab-ind: #ffff00; --tab-on: #000080; --chip-ind: #ffffff; --chip-on: #000080; --star: #ffff00;
+    --st-yellow: #ffff00; --st-orange: #ffa31a; --st-red: #ff5a4f;
+  }
+  html[data-theme="light"] {
+    color-scheme: light;
+    --navy: #f2f4f9; --accent: #2457f5; --yellow: #2457f5; --white: #141824; --late: #d9730d;
+    --bar-bg: #ffffff; --line: #e4e8f0; --zeit-bg: transparent; --zeit-fg: #0f1320;
+    --head-bg: #f7f8fb; --head-fg: #6a7388;
+    --surface: #eef1f7; --surface-hi: #e2e7f1; --border: #d3d9e6; --muted: #667085;
+    --card: #ffffff; --row-hover: #f5f7fc; --shadow: 0 12px 32px rgba(30,45,90,.16); --ring: rgba(36,87,245,.25);
+    --tab-ind: #2457f5; --tab-on: #ffffff; --chip-ind: #141824; --chip-on: #ffffff; --star: #f5a300;
+    --st-yellow: #a67c00; --st-orange: #d9730d; --st-red: #d92d20;
+  }
+  html[data-ui="modern"], html[data-ui="modern"] body { background: var(--navy); color: var(--white); font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; }
+  html[data-ui="modern"] .bar { border-bottom: 1px solid var(--line); padding: 10px 14px; gap: 10px; }
+  html[data-ui="modern"] .bar .tab { border: 0; border-radius: 10px; background: var(--surface); color: var(--muted); font-weight: 600; padding: 8px 14px; }
+  html[data-ui="modern"] .bar .tab:not(.active):hover { background: var(--surface-hi); color: var(--white); }
+  html[data-ui="modern"] .bar .tab.active { background: var(--tab-ind); color: var(--tab-on); }
+  html[data-ui="modern"] .search input { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--white); padding: 9px 12px; font-family: inherit; }
+  html[data-ui="modern"] .search input:focus { border-color: var(--accent); }
+  html[data-ui="modern"] .suggest { background: var(--card); color: var(--white); border: 1px solid var(--border); border-radius: 12px; margin-top: 6px; overflow: hidden; box-shadow: var(--shadow); }
+  html[data-ui="modern"] .suggest button { color: var(--white); border-bottom: 1px solid var(--line); padding: 10px 12px; }
+  html[data-ui="modern"] .suggest button:hover { background: var(--surface-hi); }
+  html[data-ui="modern"] .chip { border: 1px solid var(--border); border-radius: 999px; color: var(--muted); padding: 5px 13px; }
+  html[data-ui="modern"] .chip:not(.active):hover { color: var(--white); border-color: var(--muted); }
+  html[data-ui="modern"] .chip.active { background: var(--chip-ind); border-color: var(--chip-ind); color: var(--chip-on); }
+
+  html[data-ui="modern"] .board, html[data-ui="modern"] .favlist { margin: 16px 14px 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); }
+  html[data-ui="modern"] .sep { display: none; }
+  html[data-ui="modern"] .head { padding: 14px 18px; min-height: 0; }
+  html[data-ui="modern"] .clock { font-size: 30px; font-weight: 600; letter-spacing: -.5px; width: 120px; color: var(--white); }
+  html[data-ui="modern"] .head h1 { font-size: 24px; font-weight: 600; letter-spacing: -.3px; }
+  html[data-ui="modern"] .star { font-size: 30px; width: 120px; color: var(--muted); }
+  html[data-ui="modern"] .star:hover { color: var(--white); }
+  html[data-ui="modern"] .star.on { color: var(--star); }
+
+  html[data-ui="modern"] .cols, html[data-ui="modern"] .favlist .cols { height: 38px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  html[data-ui="modern"] .cols div { padding-left: 14px; }
+  html[data-ui="modern"] .cols div:last-child { padding-right: 18px; }
+  html[data-ui="modern"] .cols .gh { font-size: 11px; line-height: 13px; letter-spacing: .03em; }
+  html[data-ui="modern"] .row { min-height: 76px; transition: background .15s; }
+  html[data-ui="modern"] .row:last-child { border-bottom: 0; }
+  html[data-ui="modern"] .row:hover { background: var(--row-hover); }
+  html[data-ui="modern"] .zeit { padding: 12px 6px 10px 14px; }
+  html[data-ui="modern"] .zeit b { font-size: 28px; line-height: 32px; font-weight: 600; letter-spacing: -.5px; }
+  html[data-ui="modern"] .zeit small { font-size: 13px; line-height: 18px; color: var(--zeit-sub, var(--muted)); padding-left: 0; margin-top: 2px; }
+  html[data-ui="modern"] .nach { font-size: 20px; font-weight: 600; line-height: 26px; padding: 12px 10px 0 14px; letter-spacing: -.2px; }
+  html[data-ui="modern"] .ueber { font-size: 15px; color: var(--ueber-fg, var(--muted)); padding: 15px 14px 0 4px; }
+  html[data-ui="modern"] .mq .end { color: var(--white); }
+  html[data-ui="modern"] .gleis { font-size: 20px; font-weight: 600; padding: 12px 18px 0 0; }
+  html[data-ui="modern"] .status { font-size: 14px; line-height: 20px; margin-top: 2px; }
+  html[data-ui="modern"] .cancel .nach, html[data-ui="modern"] .cancel .zeit b { opacity: .55; }
+  html[data-ui="modern"] .msg { color: var(--muted); font-size: 18px; padding: 28px 18px; }
+  html[data-ui="modern"] .foot { padding: 14px 18px; color: var(--muted); }
+  html[data-ui="modern"] .foot button, html[data-ui="modern"] .back { border: 1px solid var(--border); border-radius: 10px; color: var(--white); background: var(--surface); padding: 7px 14px; }
+  html[data-ui="modern"] .foot button:hover, html[data-ui="modern"] .back:hover { background: var(--surface-hi); }
+  html[data-ui="modern"] .back { margin: 14px 14px 0; font-weight: 600; }
+  html[data-ui="modern"] .favitem { padding: 18px 18px; font-size: 18px; font-weight: 600; color: var(--white); }
+  html[data-ui="modern"] .favitem:hover, html[data-ui="modern"] .favitem:focus-visible { background: var(--row-hover); color: var(--white); }
+  html[data-ui="modern"] .favitem span, html[data-ui="modern"] .favitem:hover span { color: var(--accent); }
+
+  @media (max-width: 700px) {
+    .cols, .row { grid-template-columns: 112px 1fr 68px; }
+    .cols div:nth-child(3), .ueber { display: none; }
+    .cols .gh { font-size: 11px; line-height: 12px; }
+    .cols { font-size: 22px; height: 40px; } .zeit b { font-size: 24px; line-height: 30px; } .zeit small { font-size: 12px; }
+    .nach { font-size: 19px; line-height: 24px; } .gleis { font-size: 22px; }
+    .clock, .star { width: auto; font-size: 28px; } .head h1 { font-size: 22px; }
+    html[data-ui="modern"] .board, html[data-ui="modern"] .favlist { margin: 12px 8px 0; border-radius: 14px; }
+    html[data-ui="modern"] .cols { font-size: 11px; height: 34px; }
+    html[data-ui="modern"] .cols div { padding-left: 10px; }
+    html[data-ui="modern"] .zeit { padding-left: 10px; }
+    html[data-ui="modern"] .zeit b { font-size: 24px; line-height: 28px; }
+    html[data-ui="modern"] .zeit small { font-size: 12px; }
+    html[data-ui="modern"] .nach { font-size: 17px; line-height: 22px; padding-left: 10px; }
+    html[data-ui="modern"] .gleis { font-size: 17px; padding-right: 12px; }
+    html[data-ui="modern"] .clock, html[data-ui="modern"] .star { font-size: 24px; width: auto; }
+    html[data-ui="modern"] .head h1 { font-size: 18px; }
+    html[data-ui="modern"] .head { padding: 12px; }
+  }
+</style>
+<script>
+  // gespeicherte Wahl, sonst Systemeinstellung
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('theme'); } catch (e) {}
+    if (!t) t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'classic';
+    document.documentElement.setAttribute('data-theme', t);
+    document.documentElement.setAttribute('data-ui', 'modern');
+  })();
+</script>
+</head>
+<body>
+<div class="bar">
+  <div class="switch tabs" id="tabs">
+    <button class="tab active" data-view="board">Abfahrten</button>
+    <button class="tab" data-view="favs">★ Favoriten (<span id="favCount">0</span>)</button>
+    <button class="tab hidden" id="trackTab" data-view="tracking">🔔 Tracking (<span id="trackCount">0</span>)</button>
+  </div>
+  <div class="search" id="searchBox">
+    <input id="q" type="search" placeholder="Haltestelle suchen …" autocomplete="off">
+    <div class="suggest hidden" id="suggest"></div>
+  </div>
+  <span class="sp"></span>
+  <div class="switch" id="chips">
+    <button class="chip active" data-f="all">Alle</button>
+    <button class="chip" data-f="bus">Bus</button>
+    <button class="chip" data-f="bahn">Bahn</button>
+  </div>
+  <div class="switch" id="acct"></div>
+  <div class="switch" id="themes" title="Darstellung">
+    <button class="chip" data-theme="classic"><span class="ico">▤</span> Klassisch</button>
+    <button class="chip" data-theme="dark"><span class="ico">☾</span> Dunkel</button>
+    <button class="chip" data-theme="light"><span class="ico">☀</span> Hell</button>
+  </div>
+</div>
+
+<div id="out"></div>
+
+<div class="modal hidden" id="modal"><div class="card" id="modalBody"></div></div>
+
+<div class="foot"><span id="updated"></span><button id="refresh"><span class="spin">↻</span> Aktualisieren</button></div>
+
+<script>
+const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
+const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
+const VIA_PARALLEL = 6;                // gleichzeitige Anfragen für die „Über“-Spalte
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+let favs = store.get('favs', []);      // [{id, name}]
+let current = store.get('current', null);
+let filter = 'all';
+let view = 'board';
+let favSel = null;                     // in der Favoritenliste gewählte Haltestelle
+let gen = 0;                           // verwirft veraltete Ladevorgänge
+const viaCache = new Map();            // tripId -> "A, B, C"
+let session = store.get('session', null);   // {token, name} nach Telegram-Anmeldung
+let tracked = new Set();               // Schlüssel der im Bot verfolgten Fahrten
+let botTrips = null;                   // {trips, routines} vom Bot
+let favSaving = Promise.resolve();     // Favoriten-Änderungen laufen nacheinander zum Bot
+const depByKey = new Map();            // Fahrt-Schlüssel -> Abfahrt der angezeigten Tafel
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hhmm = iso => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+const kind = d => d.mode === 'BUS' ? 'bus' : 'bahn';
+const isFav = id => favs.some(f => f.id === id);
+
+async function api(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function fetchDepartures(id) {
+  const data = await api(`/stoptimes?stopId=${encodeURIComponent(id)}&n=150`);
+  return (data.stopTimes || []).map(st => {
+    const p = st.place;
+    const planned = p.scheduledDeparture || p.departure;
+    const when = p.departure || planned;
+    return {
+      key: st.tripId + '|' + p.stopId,
+      tripId: st.tripId,
+      plannedWhen: planned,
+      when,
+      delay: (new Date(when) - new Date(planned)) / 1000,
+      line: { name: st.displayName || st.routeShortName },
+      mode: st.mode,
+      direction: st.headsign,
+      platform: p.track || '',
+      cancelled: !!(st.cancelled || st.tripCancelled),
+      stopName: p.name,
+      alerts: activeAlerts([...(st.alerts || []), ...(p.alerts || [])], new Date(when))
+    };
+  });
+}
+
+// Meldungen (z. B. Streckensperrung), die zum Abfahrtszeitpunkt gelten. Nicht jede Fahrt hat welche, ein Ausfallgrund ist meist nicht dabei.
+function activeAlerts(list, t) {
+  const seen = new Set();
+  return list.filter(a => {
+    const per = a.impactPeriod?.length ? a.impactPeriod : a.communicationPeriod;
+    const on = !per?.length || per.some(x => (!x.start || new Date(x.start) <= t) && (!x.end || new Date(x.end) >= t));
+    const key = a.headerText || a.descriptionText;
+    if (!on || !key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// Meldungstexte kommen als HTML: nur Text und Aufzählungen übernehmen
+function plain(html) {
+  const s = String(html || '').replace(/<\s*br\s*\/?>/gi, '\n').replace(/<\/(li|p|ul)>/gi, '\n').replace(/<li[^>]*>/gi, '• ');
+  return (new DOMParser().parseFromString(s, 'text/html').body.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function showAlerts(d) {
+  if (!d?.alerts?.length) return;
+  const items = d.alerts.map(a => `<div class="altext"><b>${esc(plain(a.headerText))}</b>${
+    a.descriptionText ? '<br>' + esc(plain(a.descriptionText)) : ''}${
+    /^https?:\/\//.test(a.url || '') ? `<br><a href="${esc(a.url)}" target="_blank" rel="noopener">Mehr Infos</a>` : ''}</div>`).join('');
+  showModal(`<h3 class="alhead">${d.cancelled ? 'Fahrt fällt aus' : 'Meldung'} · ${esc(d.line?.name || '')} → ${esc(d.direction || '')}</h3>
+    ${d.cancelled ? '<p class="alnote">Ein genauer Ausfallgrund wird meist nicht übermittelt. Das sind die Meldungen zu dieser Fahrt:</p>' : ''}
+    ${items}<button id="loginCancel">Schließen</button>`);
+}
+
+async function fetchVia(d) {
+  if (viaCache.has(d.tripId)) return viaCache.get(d.tripId);
+  const { legs } = await api(`/trip?tripId=${encodeURIComponent(d.tripId)}`);
+  const leg = legs[0];
+  const all = [leg.from, ...(leg.intermediateStops || []), leg.to].map(x => x.name);
+  const i = all.indexOf(d.stopName);
+  const via = all.slice(i + 1, -1).join(', ');       // ohne aktuellen Halt und Ziel
+  viaCache.set(d.tripId, via);
+  return via;
+}
+
+const MODE_NAMES = { BUS: 'Bus', TRAM: 'Tram', SUBWAY: 'U-Bahn', FERRY: 'Fähre' };
+// Bus, Tram und Fähre halten am Steig, Zug und U-Bahn am Gleis
+const platformLabel = m => ['BUS', 'TRAM', 'FERRY'].includes(m) ? 'Steig' : 'Gleis';
+const modeName = m => MODE_NAMES[m] || 'Zug';
+
+// an Folgetagen den Wochentag dazuschreiben
+function dayTag(iso) {
+  const dt = new Date(iso);
+  return dt.toDateString() === new Date().toDateString() ? ''
+    : ' · ' + dt.toLocaleDateString('de-DE', { weekday: 'short' });
+}
+
+function rowHtml(d, idx) {
+  const planned = d.plannedWhen || d.when;
+  const delayMin = d.delay ? Math.round(d.delay / 60) : 0;
+  const ueber = esc(viaCache.get(d.tripId) ?? '');
+  // Verspätung/Ausfall steht in einer eigenen Zeile unter der Laufschrift
+  const sev = d.cancelled || delayMin >= 15 ? 'red' : delayMin >= 5 ? 'orange' : '';
+  const hasAlert = !!d.alerts?.length;
+  const alertLink = (cls, text) => `<span class="status alertlink ${cls}" role="button" tabindex="0" title="Meldung anzeigen">${text}</span>`;
+  const status = d.cancelled ? (hasAlert ? '' : 'Fahrt fällt aus')       // mit Meldung: „Fahrt fällt aus“ ist unterstrichen und anklickbar
+    : delayMin >= 1 ? `+${delayMin} min · ca. ${hhmm(d.when)}` : '';
+  const alertHtml = hasAlert && d.cancelled ? alertLink(sev, 'Fahrt fällt aus') : '';
+  const info = hasAlert ? '<i class="alertlink info" role="button" tabindex="0" title="Meldung anzeigen" aria-label="Meldung anzeigen"></i>' : '';   // neben der Uhrzeit, damit die Zeile nicht höher wird
+  depByKey.set(d.key, d);
+  const bell = session ? `<i class="bell ${tracked.has(d.key) ? 'on' : ''}" title="Fahrt im Telegram-Bot verfolgen">🔔</i>` : '';
+  return `<div class="row ${d.cancelled ? 'cancel' : ''} ${session ? 'trackable' : ''}" data-idx="${idx}" data-key="${esc(d.key)}">
+    <div class="zeit"><b>${hhmm(planned)}${info}${bell}</b><small>${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
+    <div class="nach">${esc(d.direction || '')}</div>
+    <div class="ueber"><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span>${status ? `<span class="status ${sev}">${status}</span>` : ''}${alertHtml}</div>
+    <div class="gleis">${d.platform ? `<small>${platformLabel(d.mode)}</small>${esc(d.platform)}` : ''}</div>
+  </div>`;
+}
+
+function boardHtml(stop, deps, error, tag) {
+  const list = (deps || []).filter(d => filter === 'all' || kind(d) === filter);
+  const rows = error ? `<div class="msg">Fehler beim Laden: ${esc(error)}</div>`
+    : !list.length ? '<div class="msg">Keine Abfahrten gefunden.</div>'
+    : list.map(rowHtml).join('');
+  return `<section class="board" data-tag="${tag}">
+    <div class="head">
+      <div class="clock">${new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
+      <h1>Abfahrt ${esc(stop.name)}</h1>
+      <button class="star ${isFav(stop.id) ? 'on' : ''}" data-id="${esc(stop.id)}" data-name="${esc(stop.name)}"
+        title="Favorit umschalten">${isFav(stop.id) ? '★' : '☆'}</button>
+    </div>
+    <div class="cols"><div>Zeit</div><div>Nach</div><div>Über</div><div class="gh">Gleis/Steig</div></div>
+    <div class="rows">${rows}</div>
+  </section>`;
+}
+
+// „Über“ asynchron nachladen, ohne die Tafel neu zu zeichnen
+// Lange „Über“-Texte endlos durchlaufen lassen, getrennt durch „+++“
+const MARQUEE_PX_PER_SEC = 30;
+function marquee(cell) {
+  const mq = cell.firstElementChild;
+  if (!mq) return;
+  mq.classList.remove('run');
+  mq.querySelectorAll('.clone').forEach(c => c.remove());
+  const seg = mq.firstElementChild;
+  const avail = cell.clientWidth - 12;               // abzüglich Padding
+  if (avail <= 0) return;
+  mq.classList.add('run');                           // zeigt „+++“ für die Messung
+  const w = seg.offsetWidth;
+  if (w <= avail) return mq.classList.remove('run');
+  const clone = seg.cloneNode(true);                 // zweite Kopie, damit der Übergang nahtlos ist
+  clone.classList.add('clone');
+  mq.appendChild(clone);
+  mq.style.setProperty('--dist', -w + 'px');
+  const dur = Math.round(w / MARQUEE_PX_PER_SEC * 10) / 10;
+  mq.style.setProperty('--dur', dur + 's');
+  mq.style.animationDelay = '-' + ((Date.now() / 1000) % dur).toFixed(2) + 's';   // gleiche Phase wie vor dem Neuzeichnen
+}
+const marqueeAll = () => document.querySelectorAll('.ueber').forEach(marquee);
+window.addEventListener('resize', marqueeAll);
+
+async function fillVia(el, list, myGen) {
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length && myGen === gen) {
+      const i = next++, d = list[i];
+      if (d.cancelled || !d.tripId) continue;
+      try {
+        await fetchVia(d);
+        const cell = el.querySelector(`.row[data-idx="${i}"] .ueber`);
+        if (cell && myGen === gen) {
+          cell.innerHTML = rowHtml(d, i).match(/<div class="ueber">([\s\S]*?)<\/div>/)[1];
+          marquee(cell);
+        }
+      } catch { /* Über bleibt leer, z. B. bei Netzwerkfehler */ }
+    }
+  };
+  await Promise.all(Array.from({ length: VIA_PARALLEL }, worker));
+}
+
+async function load(stop, tag, myGen) {
+  let deps = null, error = null;
+  try { deps = await fetchDepartures(stop.id); deps.forEach(d => d.stop = stop); } catch (e) { error = e.message; }
+  return { html: boardHtml(stop, deps, error, tag), deps };
+}
+
+let loads = 0;
+async function render() {
+  $('#refresh').classList.add('loading');
+  loads++;
+  try { await renderBoards(); } finally { if (--loads === 0) $('#refresh').classList.remove('loading'); }
+}
+
+async function renderBoards() {
+  const myGen = ++gen;
+  if (session) {
+    await Promise.all([syncTrips(), view === 'favs' ? syncFavs(false) : null]);
+    if (myGen !== gen) return;
+  }
+  if (view === 'tracking') {
+    $('#out').innerHTML = trackingHtml();
+    return;
+  }
+  if (view === 'favs' && !favSel) {
+    $('#out').innerHTML = favs.length
+      ? `<div class="favlist"><div class="cols" style="grid-template-columns:1fr"><div>★ Favoriten</div></div>${
+          favs.map(f => `<button class="favitem" data-id="${esc(f.id)}">${esc(f.name)}<span>›</span></button>`).join('')}</div>`
+      : '<div class="msg">Noch keine Favoriten. Markiere Haltestellen mit ☆ auf der Abfahrten-Seite.</div>';
+    return;
+  }
+  const stops = view === 'favs' ? [favSel] : current ? [current] : [];
+  if (!stops.length) {
+    $('#out').innerHTML = `<div class="msg">${view === 'favs'
+      ? 'Noch keine Favoriten. Markiere Haltestellen mit ☆ auf der Abfahrten-Seite.'
+      : 'Haltestelle oben suchen, um Abfahrten zu sehen.'}</div>`;
+    return;
+  }
+  const results = await Promise.all(stops.map((s, i) => load(s, i, myGen)));
+  if (myGen !== gen) return;
+  const back = view === 'favs' ? '<button class="back">← Alle Favoriten</button>' : '';
+  $('#out').innerHTML = back + results.map(r => r.html).join('<div class="sep"></div>');
+  marqueeAll();
+  $('#updated').textContent = 'Stand ' + new Date().toLocaleTimeString('de-DE') + ' · Daten: Transitous';
+  results.forEach((r, i) => {
+    if (!r.deps) return;
+    const list = r.deps.filter(d => filter === 'all' || kind(d) === filter);
+    fillVia($('#out').querySelectorAll('.board')[i], list, myGen);
+  });
+}
+
+function updateBadge(pop) {
+  const b = $('#favCount');
+  b.textContent = favs.length;
+  if (pop) { b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); }
+}
+
+function toggleFav(id, name) {
+  favs = isFav(id) ? favs.filter(f => f.id !== id) : [...favs, { id, name }];
+  store.set('favs', favs);
+  updateBadge(true);
+  if (session) {
+    const on = isFav(id);
+    favSaving = favSaving.then(() => bot('POST', '/favs', { id, name, on })).catch(() => {});
+  }
+  if (view === 'board') {                          // Tafel nicht neu zeichnen, die Laufschrift läuft einfach weiter
+    document.querySelectorAll('.star').forEach(el => {
+      if (el.dataset.id !== id) return;
+      const on = isFav(id);
+      el.textContent = on ? '★' : '☆';
+      el.classList.toggle('on', on);
+      el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+    });
+    return;
+  }
+  if (favSel && favSel.id === id) favSel = null;   // entfernte Favoriten: zurück zur Liste
+  render();
+}
+
+function setView(v) {
+  view = v;
+  favSel = null;
+  setActive($('#tabs'), document.querySelector(`.tab[data-view="${v}"]`));
+  $('#searchBox').classList.toggle('hidden', v !== 'board');
+  render();
+}
+
+// Suche
+let timer;
+$('#q').addEventListener('input', e => {
+  clearTimeout(timer);
+  const q = e.target.value.trim();
+  if (q.length < 2) return $('#suggest').classList.add('hidden');
+  timer = setTimeout(async () => {
+    try {
+      const res = await api(`/geocode?text=${encodeURIComponent(q)}&type=STOP`);
+      const box = $('#suggest');
+      const seen = new Set();
+      box.innerHTML = res.filter(s => s.type === 'STOP' && !seen.has(s.name) && seen.add(s.name)).slice(0, 8).map(s =>
+        `<button data-id="${esc(s.id)}" data-name="${esc(s.name)}">${isFav(s.id) ? '★ ' : ''}${esc(s.name)}</button>`).join('')
+        || '<button disabled>Keine Treffer</button>';
+      box.classList.remove('hidden');
+    } catch { /* nächste Eingabe versucht es erneut */ }
+  }, 300);
+});
+
+$('#suggest').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || !b.dataset.id) return;
+  current = { id: b.dataset.id, name: b.dataset.name };
+  store.set('current', current);
+  $('#q').value = current.name;
+  $('#suggest').classList.add('hidden');
+  render();
+});
+
+document.addEventListener('click', e => {
+  const alk = e.target.closest('.alertlink');
+  if (alk) return showAlerts(depByKey.get(alk.closest('.row')?.dataset.key));
+  const un = e.target.closest('.untrack');
+  if (un) return untrack(un.dataset.key);
+  const row = e.target.closest('.row.trackable');
+  if (row) return toggleTrack(row);
+  const item = e.target.closest('.favitem:not(.plain)');
+  if (item) { favSel = favs.find(f => f.id === item.dataset.id) || null; return render(); }
+  if (e.target.closest('.back')) { favSel = null; return render(); }
+  const star = e.target.closest('.star');
+  if (star) return toggleFav(star.dataset.id, star.dataset.name);
+  if (!e.target.closest('.search')) $('#suggest').classList.add('hidden');
+});
+
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.view)));
+document.querySelectorAll('.chip[data-f]').forEach(c => c.addEventListener('click', () => {
+  filter = c.dataset.f;
+  setActive($('#chips'), c);
+  render();
+}));
+$('#refresh').addEventListener('click', render);
+
+// Uhr in jeder Tafel live halten, Daten jede Minute neu laden
+setInterval(() => {
+  const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  document.querySelectorAll('.clock').forEach(c => c.textContent = t);
+}, 1000);
+setInterval(render, 60000);
+
+// ---------- Telegram-Anbindung (nur für verifizierte Nutzer des Bots) ----------
+async function bot(method, path, body) {
+  const headers = {};
+  if (session) headers.Authorization = 'Bearer ' + session.token;
+  if (body) headers['Content-Type'] = 'application/json';
+  const r = await fetch(BOT_API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 && session) { logout(true); throw new Error('abgemeldet'); }
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function renderAcct() {
+  $('#acct').classList.toggle('hidden', !BOT_API);
+  $('#trackTab').classList.toggle('hidden', !BOT_API || !session);
+  $('#acct').innerHTML = session
+    ? `<button class="chip" id="logout" title="Abmelden">👤 ${esc(session.name || 'Angemeldet')} ✕</button>`
+    : '<button class="chip" id="login">Mit Telegram anmelden</button>';
+}
+
+function showModal(html) {
+  $('#modalBody').innerHTML = html;
+  $('#modal').classList.remove('hidden');
+}
+function closeModal() { $('#modal').classList.add('hidden'); loginPoll = null; }
+
+let loginPoll = null;
+async function login() {
+  try {
+    const { poll, link } = await bot('POST', '/login/start');
+    loginPoll = poll;
+    showModal(`<p>Öffne Telegram und bestätige dort die Anmeldung. Das geht nur mit einem Zugang zum Bot (Besitzer oder eingeladen).</p>
+      <a class="go" href="${esc(link)}" target="_blank" rel="noopener">In Telegram öffnen</a>
+      <p id="loginInfo">Warte auf Bestätigung …</p><button id="loginCancel">Abbrechen</button>`);
+    const t0 = Date.now();
+    while (loginPoll === poll && Date.now() - t0 < 600000) {
+      await new Promise(r => setTimeout(r, 2000));
+      if (loginPoll !== poll) return;
+      const r = await bot('GET', '/login/poll?token=' + encodeURIComponent(poll));
+      if (r.status === 'ok') {
+        session = { token: r.session, name: r.name };
+        store.set('session', session);
+        closeModal();
+        renderAcct();
+        await syncFavs(true);
+        return render();
+      }
+      if (r.status === 'expired') break;
+    }
+    if (loginPoll === poll) showModal('<p>Die Anmeldung ist abgelaufen.</p><button id="loginCancel">Schließen</button>');
+  } catch (e) {
+    showModal(`<p>Der Bot ist nicht erreichbar (${esc(e.message)}).</p><button id="loginCancel">Schließen</button>`);
+  }
+}
+
+function logout(silent) {
+  if (!silent && session) bot('POST', '/logout').catch(() => {});
+  session = null;
+  store.set('session', null);
+  tracked = new Set();
+  botTrips = null;
+  renderAcct();
+  if (view === 'tracking') setView('board'); else render();
+}
+
+async function syncFavs(merge) {
+  if (!session) return;
+  await favSaving;
+  try {
+    const r = merge ? await bot('POST', '/favs/merge', { favs }) : await bot('GET', '/favs');
+    favs = r.favs;
+    store.set('favs', favs);
+    updateBadge();
+  } catch { /* lokale Favoriten bleiben */ }
+}
+
+async function syncTrips() {
+  if (!session) return;
+  try {
+    botTrips = await bot('GET', '/trips');
+    tracked = new Set(botTrips.trips.map(t => t.key));
+    $('#trackCount').textContent = botTrips.trips.length;
+  } catch { /* Stand bleibt */ }
+}
+
+async function toggleTrack(row) {
+  const d = depByKey.get(row.dataset.key);
+  const bell = row.querySelector('.bell');
+  if (!d || !d.stop || !bell) return;
+  const on = !tracked.has(d.key);
+  on ? tracked.add(d.key) : tracked.delete(d.key);
+  bell.classList.toggle('on', on);
+  bell.classList.remove('pop'); void bell.offsetWidth; bell.classList.add('pop');
+  try {
+    if (on) {
+      await bot('POST', '/trips', {
+        key: d.key, stop: d.stop.id, stop_name: d.stop.name, line: d.line?.name || '?',
+        dest: d.direction || '–', kind: kind(d), planned: Date.parse(d.plannedWhen) / 1000
+      });
+    } else {
+      await bot('DELETE', '/trips?key=' + encodeURIComponent(d.key));
+    }
+    $('#trackCount').textContent = Math.max(0, +$('#trackCount').textContent + (on ? 1 : -1));
+  } catch {
+    on ? tracked.delete(d.key) : tracked.add(d.key);        // Änderung zurücknehmen
+    bell.classList.toggle('on', !on);
+  }
+}
+
+async function untrack(key) {
+  try { await bot('DELETE', '/trips?key=' + encodeURIComponent(key)); } catch {}
+  render();
+}
+
+function trackingHtml() {
+  const trips = botTrips?.trips || [], routines = botTrips?.routines || [];
+  if (!trips.length && !routines.length) {
+    return '<div class="msg">Keine verfolgten Fahrten. In der Abfahrtstafel eine Fahrt antippen (🔔), Meldungen kommen in Telegram.</div>';
+  }
+  const rows = trips.map(w => {
+    const delay = Math.round((w.eta - w.planned) / 60);
+    const stand = w.cancelled ? 'Fahrt fällt aus' : delay >= 1 ? `+${delay} min · ca. ${hhmm(w.eta * 1000)}` : 'pünktlich';
+    const sev = w.cancelled || delay >= 15 ? 'red' : delay >= 5 ? 'orange' : '';
+    return `<div class="row ${w.cancelled ? 'cancel' : ''}">
+      <div class="zeit"><b>${hhmm(w.planned * 1000)}</b><small>${esc(w.line)}</small></div>
+      <div class="nach">${esc(w.dest)}<span class="sub">${esc(w.stop_name)}</span></div>
+      <div class="ueber"><span class="status ${sev}">${esc(stand)}</span></div>
+      <div class="gleis"><button class="untrack" data-key="${esc(w.key)}" title="Tracking beenden">✕</button></div>
+    </div>`;
+  }).join('');
+  const rep = routines.map(r =>
+    `<div class="favitem plain">🔁 ${esc(r.hhmm)} ${esc(r.line)} → ${esc(r.dest)} · ${esc(r.days)}</div>`).join('');
+  return `<div class="favlist">
+    <div class="cols" style="grid-template-columns:1fr"><div>🔔 Verfolgte Fahrten</div></div>${rows || '<div class="msg">Keine einzelnen Fahrten.</div>'}
+    ${rep ? '<div class="cols" style="grid-template-columns:1fr"><div>🔁 Wiederkehrend (im Bot einrichten)</div></div>' + rep : ''}
+  </div>`;
+}
+
+document.addEventListener('click', e => {
+  if (e.target.closest('#login')) login();
+  else if (e.target.closest('#logout')) logout();
+  else if (e.target.closest('#loginCancel') || e.target === $('#modal')) closeModal();
+});
+
+// Aktiven Knopf eines Umschalters wechseln
+function setActive(group, btn) {
+  group.querySelectorAll(':scope > button').forEach(x => x.classList.toggle('active', x === btn));
+}
+
+// Darstellung: klassisch / dunkel / hell
+function applyTheme(t, save) {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', t);
+  root.setAttribute('data-ui', 'modern');
+  setActive($('#themes'), document.querySelector(`#themes .chip[data-theme="${t}"]`));
+  if (save) {
+    try { localStorage.setItem('theme', t); } catch {}
+    root.classList.add('theming');                 // Farben weich überblenden
+    setTimeout(() => root.classList.remove('theming'), 600);
+  }
+  marqueeAll();
+}
+document.querySelectorAll('#themes .chip').forEach(b =>
+  b.addEventListener('click', () => applyTheme(b.dataset.theme, true)));
+
+applyTheme(document.documentElement.getAttribute('data-theme'), false);
+if (!BOT_API) session = null;
+renderAcct();
+updateBadge();
+if (current) $('#q').value = current.name;
+setView(favs.length && !current ? 'favs' : 'board');
+</script>
+</body>
+</html>

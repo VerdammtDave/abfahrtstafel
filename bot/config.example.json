@@ -1,0 +1,8 @@
+{
+  "bot_token": "DEIN_TOKEN_VON_BOTFATHER",
+  "poll_seconds": 60,
+  "default_threshold_min": 5,
+  "window_min": 120,
+  "data_file": "data.json",
+  "web_origin": ""
+}

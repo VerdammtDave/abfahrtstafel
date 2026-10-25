@@ -1,0 +1,21 @@
+[Unit]
+Description=Abfahrtsbot (Telegram)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=abfahrtsbot
+Group=abfahrtsbot
+WorkingDirectory=/opt/abfahrtsbot
+ExecStart=/usr/bin/python3 /opt/abfahrtsbot/abfahrtsbot.py
+Restart=always
+RestartSec=10
+# Härtung: eigener Benutzer, nur /opt/abfahrtsbot beschreibbar
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/abfahrtsbot
+
+[Install]
+WantedBy=multi-user.target

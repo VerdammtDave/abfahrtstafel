@@ -1,0 +1,5 @@
+# Geheimnisse und Laufzeitdaten: niemals einchecken
+bot/config.json
+bot/data.json
+__pycache__/
+*.pyc
