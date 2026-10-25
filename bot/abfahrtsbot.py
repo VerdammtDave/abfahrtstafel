@@ -942,7 +942,7 @@ def check_routines():
             add = False
             with lock:
                 chat = get_chat(cid)
-                if not any(t["key"] == w["key"] for t in chat["trips"]):
+                if len(chat["trips"]) < MAX_TRIPS and not any(t["key"] == w["key"] for t in chat["trips"]):
                     chat["trips"].append(w)
                     add = True
                 for x in chat["routines"]:
@@ -1146,6 +1146,8 @@ def handle_share_callback(cb, cid, mid, action, rest):
                     todo = ("refresh", w)
                 elif any(t["key"] == w["key"] for t in chat["trips"]):
                     answer = "Wird schon verfolgt"
+                elif len(chat["trips"]) >= MAX_TRIPS:
+                    answer = f"Es sind höchstens {MAX_TRIPS} verfolgte Fahrten möglich"
                 else:
                     chat["trips"].append(w)
                     save()
@@ -1224,6 +1226,8 @@ def handle_callback(cb):
                     chat["trips"].remove(old)
                     data["state"].get(str(cid), {}).pop("w_" + old["wid"], None)
                     answer = "Nicht mehr beobachtet"
+                elif len(chat["trips"]) >= MAX_TRIPS:
+                    answer = f"Es sind höchstens {MAX_TRIPS} verfolgte Fahrten möglich"
                 else:
                     chat["trips"].append({
                         "wid": short_id(it["key"]), "key": it["key"], "stop": entry["stop"]["id"],
@@ -1348,6 +1352,7 @@ def poll_loop():
 # Die Website ruft diese kleine HTTP-API auf. Angemeldet wird ueber Telegram: Die Website zeigt einen Link zum Bot,
 # der Bot fragt nach Bestaetigung, danach holt die Website ein Sitzungs-Token. Nur Besitzer und Mitglieder kommen durch.
 
+MAX_TRIPS = 50                # verfolgte Fahrten pro Person
 SESSION_TTL = 30 * 86400
 LOGIN_TTL = 600
 web_logins = {}            # Code -> {"poll": geheimes Token, "exp": Ablauf, "cid": Chat nach Bestaetigung} (nur im Speicher)
@@ -1361,7 +1366,11 @@ def cmd_weblogin(cid, code):
         valid = bool(e) and e["exp"] > time.time()
     if not valid:
         return send(cid, "Der Anmeldelink ist abgelaufen. Bitte auf der Website erneut auf „Mit Telegram anmelden“ klicken.")
-    send(cid, "\U0001f310 Anmeldung auf der Website\nBestätige nur, wenn du sie gerade selbst gestartet hast.",
+    ua = (e.get("ua") or "unbekannt")[:100]
+    send(cid, "\U0001f310 Anmeldung auf der Website\n\n"
+              f"Angefragt von IP: {e.get('ip', '?')}\nBrowser: {ua}\n\n"
+              "⚠️ Bestätige nur, wenn du sie gerade selbst gestartet hast. Hat dir jemand den Link geschickt, tippe nicht auf „Ja“, "
+              "sonst bekommt diese Person Zugriff auf deine Fahrten.",
          reply_markup={"inline_keyboard": [[{"text": "✅ Ja, anmelden", "callback_data": "wl:" + code}]]})
 
 
@@ -1393,13 +1402,15 @@ def web_cleanup():
             save()
 
 
-def web_login_start():
+def web_login_start(meta=None):
+    meta = meta or {}
     with lock:
         if len(web_logins) >= 50:
             return 429, {"error": "zu viele Anmeldungen, bitte später erneut versuchen"}
         code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(10))
         poll = secrets.token_urlsafe(16)
-        web_logins[code] = {"poll": poll, "exp": time.time() + LOGIN_TTL, "cid": None}
+        web_logins[code] = {"poll": poll, "exp": time.time() + LOGIN_TTL, "cid": None,
+                            "ip": meta.get("ip", "?"), "ua": meta.get("ua", "")}
     return 200, {"poll": poll, "link": f"https://t.me/{cfg['bot_username']}?start=web_{code}"}
 
 
@@ -1459,10 +1470,10 @@ def web_trips(cid, chat):
     return {"trips": sorted(trips, key=lambda t: t["planned"]), "routines": routines}
 
 
-def web_route(method, path, q, body, auth):
+def web_route(method, path, q, body, auth, meta=None):
     web_cleanup()
     if method == "POST" and path == "/login/start":
-        return web_login_start()
+        return web_login_start(meta)
     if method == "GET" and path == "/login/poll":
         return web_login_poll(q.get("token", [""])[0])
     token, cid = web_session(auth)
@@ -1510,6 +1521,8 @@ def web_route(method, path, q, body, auth):
             with lock:
                 chat = get_chat(cid)
                 new = not any(t["key"] == w["key"] for t in chat["trips"])
+                if new and len(chat["trips"]) >= MAX_TRIPS:
+                    return 429, {"error": "zu viele verfolgte Fahrten"}
                 if new:
                     chat["trips"].append(w)
                     save()
@@ -1582,10 +1595,11 @@ class Api(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise ValueError("ungültige Eingabe")
             url = urllib.parse.urlparse(self.path)
-            if url.path.rstrip("/") == "/login/start" and not rate_ok(self.client_ip(), "login", 10, 600):
+            if url.path.rstrip("/") == "/login/start" and not rate_ok(self.client_ip(), "login", 5, 600):
                 return self.reply(429, {"error": "zu viele Anmeldeversuche, bitte später erneut versuchen"})
             code, out = web_route(method, url.path.rstrip("/"), urllib.parse.parse_qs(url.query), body,
-                                  self.headers.get("Authorization", ""))
+                                  self.headers.get("Authorization", ""),
+                                  {"ip": self.client_ip(), "ua": self.headers.get("User-Agent", "")})
         except (ValueError, AttributeError, TypeError, KeyError):
             code, out = 400, {"error": "ungültige Anfrage"}
         except Exception as e:
