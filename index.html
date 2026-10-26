@@ -34,7 +34,7 @@
   @keyframes drop { from { opacity: 0; transform: translateY(-14px); } to { opacity: 1; transform: none; } }
   .bar > * { animation: drop .6s cubic-bezier(.22,1,.36,1) backwards; }
   .bar > :nth-child(2) { animation-delay: .07s; } .bar > :nth-child(3) { animation-delay: .14s; }
-  .bar > :nth-child(4) { animation-delay: .21s; } .bar > :nth-child(7) { animation-delay: .28s; }
+  .bar > :nth-child(4) { animation-delay: .21s; } .bar > :nth-child(5) { animation-delay: .28s; }
   @keyframes spin { to { transform: rotate(360deg); } }
   /* Aktualisieren: runder Knopf oben, Symbol dreht sich beim Laden */
   .bar .refresh { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center;
@@ -60,7 +60,27 @@
   .bar { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: var(--bar-bg); flex-wrap: wrap; }
   .bar .tab { background: none; border: 2px solid var(--yellow); color: var(--yellow); font-size: 16px; font-weight: bold; padding: 4px 12px; }
   .bar .tab.active { background: var(--tab-ind); color: var(--tab-on); }
-  .bar .sp { flex: 1; }
+  #chips { margin-left: auto; }
+  /* Menü: ein Knopf rechts statt vieler einzelner Chips. Darin Konto, Einstellungen, Updates, Abmelden und die Darstellung. */
+  .menuwrap { position: relative; }
+  .menubtn { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 20px; line-height: 1;
+    background: var(--surface, rgba(255,255,255,.1)); color: var(--white); border: 1px solid var(--border, rgba(255,255,255,.3)); }
+  .menubtn[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+  .menubtn .avatar { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700;
+    background: var(--accent); color: var(--tab-on); }
+  .menupanel { position: absolute; right: 0; top: calc(100% + 10px); width: 280px; z-index: 40; padding: 8px; border-radius: 16px;
+    background: var(--card, var(--navy)); border: 1px solid var(--border, rgba(255,255,255,.3)); box-shadow: var(--shadow, 0 12px 32px rgba(0,0,0,.5)); }
+  .menuuser { display: flex; flex-direction: column; padding: 8px 10px 10px; border-bottom: 1px solid var(--line, rgba(255,255,255,.15)); margin-bottom: 6px; }
+  .menuuser span { font-size: 12.5px; opacity: .65; }
+  .menupanel .menuitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; padding: 10px 12px;
+    border: 0; border-radius: 10px; background: none; color: var(--white); font-size: 15px; }
+  .menupanel .menuitem:hover, .menupanel .menuitem:focus-visible { background: var(--surface-hi, rgba(255,255,255,.12)); outline: none; }
+  .menupanel .menuitem.danger { color: #ff6b61; }
+  .menuitem .ver { font-size: 12.5px; opacity: .6; }
+  .menusec { margin: 10px 10px 6px; padding-top: 10px; border-top: 1px solid var(--line, rgba(255,255,255,.15)); font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .65; }
+  .themeseg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 0 4px 4px; }
+  .themeseg .chip { padding: 7px 4px; font-size: 13px; text-align: center; white-space: nowrap; }
+  #acct.hidden + .menusec { margin-top: 2px; padding-top: 0; border-top: 0; }
   .search { position: relative; flex: 1 1 260px; max-width: 420px; }
   .search input { width: 100%; font: 16px Arial, sans-serif; padding: 5px 8px; border: 2px solid var(--white); background: var(--white); color: #000; border-radius: 0; }
   .suggest { position: absolute; left: 0; right: 0; top: 100%; background: var(--white); color: #000; z-index: 10; border: 2px solid var(--yellow); }
@@ -125,6 +145,7 @@
   .alertlink.info:hover { opacity: 1; }
   .modal .altext { text-align: left; white-space: pre-line; margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); font-size: 14px; max-height: 40vh; overflow: auto; }
   .modal .alhead { margin: 0 0 8px; font-size: 17px; }
+  .modal .card.trip { width: min(560px, calc(100% - 24px)); max-width: none; text-align: left; max-height: min(90vh, 900px); overflow: auto; padding: 22px 24px; }
   .modal .card.wide { width: min(780px, calc(100% - 24px)); max-width: none; text-align: left; max-height: min(92vh, 960px); overflow: auto; padding: 24px 28px; }
   .modal .card.wide .setsec { padding: 16px 0; }
   .memlist { border: 1px solid var(--border, rgba(255,255,255,.2)); border-radius: 12px; overflow: hidden; }
@@ -176,6 +197,40 @@
   .memact { display: flex; gap: 6px; flex-wrap: wrap; }
   .memact button, .memrow + * button { margin-top: 0; }
   .hist { margin: 0; padding-left: 18px; font-size: 13px; opacity: .85; }
+  .board .ueber[role="button"] { cursor: pointer; }
+  .board .row:hover .ueber[role="button"] { text-decoration: underline dotted; text-underline-offset: 4px; }
+  .tripbtn { display: none; margin: 6px 0 0; padding: 3px 10px; font-size: 12.5px; border-radius: 999px; background: var(--surface, rgba(255,255,255,.1)); color: var(--muted, inherit); border: 1px solid var(--border, rgba(255,255,255,.3)); }
+  .modal .card .alhead .vz { margin-left: 8px; vertical-align: middle; font-size: 14px; }
+  .vz.ok { color: #3fb950; }
+  .tripsum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0 4px; }
+  .tripsum div { padding: 10px 12px; border-radius: 12px; background: var(--surface, rgba(255,255,255,.08)); min-width: 0; }
+  .tripsum span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .65; }
+  .tripsum b { display: block; margin-top: 2px; font-size: 15px; overflow-wrap: anywhere; }
+  .tripsum small { font-size: 12.5px; opacity: .75; }
+  .stops { list-style: none; margin: 8px 0 14px; padding: 0; }
+  .stops li { position: relative; padding-left: 24px; }
+  .stops li::before { content: ""; position: absolute; left: 7px; top: 0; bottom: 0; width: 2px; background: var(--border, rgba(255,255,255,.3)); }
+  .stops li:first-child::before { top: 50%; } .stops li:last-child::before { bottom: 50%; }
+  .stops li::after { content: ""; position: absolute; left: 2px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; box-sizing: border-box;
+    background: var(--card, var(--navy)); border: 2px solid var(--muted, #aaa); }
+  .stops li.here::after { background: var(--accent); border-color: var(--accent); }
+  .stops li.past { opacity: .5; }
+  .modal .card button.stoplink { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: baseline; gap: 10px; width: 100%; margin: 0; padding: 8px 10px;
+    text-align: left; border: 0; border-radius: 10px; background: none; color: inherit; font-size: 15px; }
+  .modal .card button.stoplink:hover:not(:disabled) { background: var(--surface-hi, rgba(255,255,255,.12)); }
+  .stoplink:disabled { cursor: default; }
+  .stoplink .stime b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stoplink .stime b.late { color: var(--vz-o, var(--st-orange)); margin-right: 5px; }
+  .stoplink .stime s { font-size: 12px; opacity: .6; }
+  .stoplink em { font-style: normal; font-size: 11.5px; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--tab-on); }
+  .stoplink .strack { font-size: 12.5px; opacity: .7; white-space: nowrap; }
+  @media (max-width: 700px) {
+    .tripbtn { display: block; width: fit-content; }
+    .tripsum { grid-template-columns: 1fr; gap: 6px; }
+    .tripsum div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+    .tripsum span { width: 60px; }
+    .modal .card.trip { padding: 18px 14px; width: calc(100% - 16px); }
+  }
   .modal .updlist { text-align: left; max-height: 55vh; overflow: auto; margin: 6px 0 10px; }
   .modal .upd { padding: 8px 0; border-top: 1px solid var(--border, rgba(255,255,255,.2)); }
   .modal .upd:first-child { border-top: 0; }
@@ -287,22 +342,17 @@
   html[data-ui="modern"] .favitem span, html[data-ui="modern"] .favitem:hover span { color: var(--accent); }
 
   @media (max-width: 700px) {
-    /* Leiste: Suche + Aktualisieren, darunter Reiter, darunter Filter und Darstellung, alles in einer Spalte sauber untereinander */
+    /* Leiste: oben Suche, Aktualisieren und Menü, darunter die Reiter, darunter der Filter */
     html[data-ui="modern"] .bar { position: sticky; top: 0; z-index: 20; padding: 10px; gap: 8px; }
-    .bar .sp { display: none; }
     .search { order: 1; flex: 1 1 0; min-width: 0; max-width: none; }
     .bar .refresh { order: 2; }
-    .bar .tabs { order: 3; flex: 1 1 100%; display: flex; gap: 8px; }
+    .menuwrap { order: 3; margin-left: auto; }
+    .search:not(.hidden) ~ .menuwrap { margin-left: 0; }
+    .bar .tabs { order: 4; flex: 1 1 100%; display: flex; gap: 8px; }
     .bar .tabs .tab { flex: 1; text-align: center; padding: 8px 6px; font-size: 14px; white-space: nowrap; }
-    #chips { order: 4; flex: 1 1 0; display: flex; gap: 6px; }
+    #chips { order: 5; flex: 1 1 100%; display: flex; gap: 6px; margin-left: 0; }
     #chips .chip { flex: 1; padding: 6px 4px; }
-    #acct { order: 6; flex: 1 1 100%; }
-    #acct { display: flex; gap: 6px; }
-    #acct .chip { flex: 1; }
-    #acct #updatesBtn { flex: none; }
-    #themes { order: 5; gap: 6px; }
-    #themes .lbl { display: none; }
-    #themes .chip { padding: 6px 11px; }
+    .menupanel { position: fixed; left: 10px; right: 10px; top: 64px; width: auto; }
     .foot { justify-content: center; padding: 12px 8px; font-size: 12px; }
     .cols, .row { grid-template-columns: 132px 1fr 72px; }
     .cols div:nth-child(3), .ueber { display: none; }
@@ -350,17 +400,22 @@
   <button class="refresh" id="refresh" title="Aktualisieren" aria-label="Aktualisieren">
     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 3.5V8.5H15.5"/></svg>
   </button>
-  <span class="sp"></span>
   <div class="switch" id="chips">
     <button class="chip active" data-f="all">Alle</button>
     <button class="chip" data-f="bus">Bus</button>
     <button class="chip" data-f="bahn">Bahn</button>
   </div>
-  <div class="switch" id="acct"></div>
-  <div class="switch" id="themes" title="Darstellung">
-    <button class="chip" data-theme="classic" aria-label="Klassisch"><span class="ico">▤</span><span class="lbl"> Klassisch</span></button>
-    <button class="chip" data-theme="dark" aria-label="Dunkel"><span class="ico">☾</span><span class="lbl"> Dunkel</span></button>
-    <button class="chip" data-theme="light" aria-label="Hell"><span class="ico">☀</span><span class="lbl"> Hell</span></button>
+  <div class="menuwrap">
+    <button class="menubtn" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-controls="menuPanel" title="Menü" aria-label="Menü"></button>
+    <div class="menupanel hidden" id="menuPanel">
+      <div id="acct"></div>
+      <div class="menusec">Darstellung</div>
+      <div class="themeseg" id="themes">
+        <button class="chip" data-theme="classic"><span class="ico">▤</span> Klassisch</button>
+        <button class="chip" data-theme="dark"><span class="ico">☾</span> Dunkel</button>
+        <button class="chip" data-theme="light"><span class="ico">☀</span> Hell</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -374,6 +429,10 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.8.0', date: '26.10.2026', items: [
+    'Aufgeräumte Leiste: Suche, Aktualisieren und Filter, alles andere (Einstellungen, Updates, Abmelden, Darstellung) steckt im Menü rechts',
+    'Abmelden fragt vorher nach',
+    'Auf „Über“ klicken (am Handy auf „Halte“) zeigt die Fahrt mit Zusammenfassung und allen Halten. Ein Halt lässt sich antippen und zeigt seine Abfahrten' ] },
   { v: '1.7.0', date: '26.10.2026', items: [
     'Neue Rollen: Besitzer, Verwalter, Mitglied und Gast. Verwalter laden ein und verwalten Mitglieder und Gäste, Mitglieder nutzen den Bot, Gäste sehen nur per Code geteilte Verbindungen',
     'Rollen lassen sich in der Mitgliederverwaltung per Dropdown ändern, immer nur für Personen unter dir',
@@ -495,10 +554,73 @@ function showAlerts(d) {
     ${items}<button id="loginCancel">Schließen</button>`);
 }
 
+const tripCache = new Map();           // tripId -> Fahrtabschnitt mit allen Halten
+
+async function fetchTrip(tripId) {
+  if (!tripCache.has(tripId)) {
+    const { legs } = await api(`/trip?tripId=${encodeURIComponent(tripId)}`);
+    tripCache.set(tripId, legs[0]);
+  }
+  return tripCache.get(tripId);
+}
+
+function goStop(id, name) {
+  if (!id) return;
+  closeModal(true);
+  current = { id, name };
+  store.set('current', current);
+  $('#q').value = name;
+  if (view !== 'board') setView('board'); else render();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+const clock = iso => iso ? hhmm(iso) : '';
+
+function tripHtml(d, leg) {
+  const stops = [leg.from, ...(leg.intermediateStops || []), leg.to];
+  const here = Math.max(0, stops.findIndex(p => (d.stop?.id && p.stopId === d.stop.id) || p.name === d.stopName));
+  // erster Halt zeigt die Abfahrt, alle anderen die Ankunft
+  const times = stops.map((p, i) => {
+    const plan = i === 0 ? p.scheduledDeparture || p.departure : p.scheduledArrival || p.arrival;
+    const real = i === 0 ? p.departure || plan : p.arrival || plan;
+    return { plan, real, late: plan && real ? Math.round((new Date(real) - new Date(plan)) / 60000) : 0 };
+  });
+  const first = stops[0], last = stops[stops.length - 1];
+  const dur = times[0].real && times[times.length - 1].real ? Math.round((new Date(times[times.length - 1].real) - new Date(times[0].real)) / 60000) : 0;
+  const delayMin = d.delay ? Math.round(d.delay / 60) : 0;
+  const stand = d.cancelled ? '<span class="vz red">fällt aus</span>' : delayMin >= 1 ? `<span class="vz ${delayMin >= 15 ? 'red' : delayMin >= 5 ? 'orange' : ''}">+${delayMin} min</span>` : '<span class="vz ok">pünktlich</span>';
+  const rest = stops.length - 1 - here;
+  const items = stops.map((p, i) => {
+    const t = times[i];
+    const zeit = t.late >= 1 ? `<b class="late">${clock(t.real)}</b><s>${clock(t.plan)}</s>` : `<b>${clock(t.real || t.plan)}</b>`;
+    const cls = i === here ? 'here' : i < here ? 'past' : '';
+    return `<li class="${cls}"><button type="button" class="stoplink" data-id="${esc(p.stopId || '')}" data-name="${esc(p.name)}" ${p.stopId ? '' : 'disabled'}>
+      <span class="stime">${zeit}</span><span class="sname">${esc(p.name)}${i === here ? ' <em>hier</em>' : ''}</span><span class="strack">${p.track ? esc(platformLabel(d.mode) + ' ' + p.track) : ''}</span></button></li>`;
+  }).join('');
+  return `<h3 class="alhead">${d.mode === 'BUS' ? '🚌' : '🚆'} ${esc(d.line?.name || '')} → ${esc(d.direction || last.name)} ${stand}</h3>
+    <div class="tripsum">
+      <div><span>Von</span><b>${esc(first.name)}</b><small>ab ${clock(times[0].real || times[0].plan)}</small></div>
+      <div><span>Nach</span><b>${esc(last.name)}</b><small>an ${clock(times[times.length - 1].real || times[times.length - 1].plan)}</small></div>
+      <div><span>Strecke</span><b>${stops.length} Halte${dur ? ' · ' + dur + ' min' : ''}</b><small>${rest > 0 ? rest + ' Halte nach ' + esc(d.stopName) : 'Endhaltestelle'}</small></div>
+    </div>
+    <p class="hint">Tippe auf eine Haltestelle, um ihre Abfahrten zu sehen.</p>
+    <ol class="stops">${items}</ol>
+    <button id="loginCancel">Schließen</button>`;
+}
+
+async function openTrip(d) {
+  if (!d?.tripId) return;
+  showModal('<p>Fahrt wird geladen …</p>', 'trip');
+  try {
+    showModal(tripHtml(d, await fetchTrip(d.tripId)), 'trip');
+  } catch (e) {
+    showModal(`<p>Die Fahrt konnte nicht geladen werden (${esc(e.message)}).</p><button id="loginCancel">Schließen</button>`);
+  }
+}
+
 async function fetchVia(d) {
   if (viaCache.has(d.tripId)) return viaCache.get(d.tripId);
-  const { legs } = await api(`/trip?tripId=${encodeURIComponent(d.tripId)}`);
-  const leg = legs[0];
+  const leg = await fetchTrip(d.tripId);
   const all = [leg.from, ...(leg.intermediateStops || []), leg.to].map(x => x.name);
   const i = all.indexOf(d.stopName);
   const via = all.slice(i + 1, -1).join(', ');       // ohne aktuellen Halt und Ziel
@@ -540,8 +662,8 @@ function rowHtml(d, idx) {
   const bell = session ? `<i class="bell ${tracked.has(d.key) ? 'on' : ''}" title="Fahrt im Telegram-Bot verfolgen">🔔</i>` : '';
   return `<div class="row ${d.cancelled ? 'cancel' : ''} ${session ? 'trackable' : ''}" data-idx="${idx}" data-key="${esc(d.key)}">
     <div class="zeit"><b>${zeitHtml(planned, d.when, delayMin, d.cancelled)}${altHtml(planned, delayMin, d.cancelled)}${info}${bell}</b><small>${vz}${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
-    <div class="nach">${esc(d.direction || '')}</div>
-    <div class="ueber"><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span></div>
+    <div class="nach">${esc(d.direction || '')}${d.tripId && !d.cancelled ? '<button type="button" class="tripbtn">Halte ›</button>' : ''}</div>
+    <div class="ueber" ${d.tripId && !d.cancelled ? 'title="Alle Halte anzeigen" role="button" tabindex="0"' : ''}><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span></div>
     <div class="gleis">${d.platform ? `<small>${platformLabel(d.mode)}</small>${esc(d.platform)}` : ''}</div>
   </div>`;
 }
@@ -598,7 +720,7 @@ async function fillVia(el, list, myGen) {
         await fetchVia(d);
         const cell = el.querySelector(`.row[data-idx="${i}"] .ueber`);
         if (cell && myGen === gen) {
-          cell.innerHTML = rowHtml(d, i).match(/<div class="ueber">([\s\S]*?)<\/div>/)[1];
+          cell.innerHTML = rowHtml(d, i).match(/<div class="ueber"[^>]*>([\s\S]*?)<\/div>/)[1];
           marquee(cell);
         }
       } catch { /* Über bleibt leer, z. B. bei Netzwerkfehler */ }
@@ -726,6 +848,8 @@ $('#suggest').addEventListener('click', e => {
 document.addEventListener('click', e => {
   const alk = e.target.closest('.alertlink');
   if (alk) return showAlerts(depByKey.get(alk.closest('.row')?.dataset.key));
+  const tr = e.target.closest('.board .ueber[role="button"], .tripbtn');
+  if (tr) return openTrip(depByKey.get(tr.closest('.row')?.dataset.key));
   const un = e.target.closest('.untrack');
   if (un) return untrack(un.dataset.key);
   const row = e.target.closest('.row.trackable');
@@ -770,9 +894,35 @@ async function bot(method, path, body) {
 function renderAcct() {
   $('#acct').classList.toggle('hidden', !BOT_API);
   $('#trackTab').classList.toggle('hidden', !BOT_API || !session);
+  $('#menuBtn').innerHTML = session ? `<span class="avatar">${esc((session.name || '?').trim().charAt(0).toUpperCase())}</span>` : '☰';
   $('#acct').innerHTML = session
-    ? `<button class="chip" id="settingsBtn" title="Einstellungen">⚙ Einstellungen</button><button class="chip" id="updatesBtn" title="Was ist neu?">v${VERSION}</button><button class="chip" id="logout" title="Abmelden">👤 ${esc(session.name || 'Angemeldet')} ✕</button>`
-    : '<button class="chip" id="login">Mit Telegram anmelden</button>';
+    ? `<div class="menuuser"><b>${esc(session.name || 'Angemeldet')}</b><span>Angemeldet über Telegram</span></div>
+       <button class="menuitem" id="settingsBtn"><span>⚙ Einstellungen</span></button>
+       <button class="menuitem" id="updatesBtn"><span>🆕 Was ist neu</span><span class="ver">v${VERSION}</span></button>
+       <button class="menuitem danger" id="logout"><span>⏻ Abmelden</span></button>`
+    : '<button class="menuitem" id="login"><span>✈ Mit Telegram anmelden</span></button>';
+}
+
+function setMenu(open) {
+  $('#menuPanel').classList.toggle('hidden', !open);
+  $('#menuBtn').setAttribute('aria-expanded', String(open));
+}
+document.addEventListener('click', e => {
+  const open = !$('#menuPanel').classList.contains('hidden');
+  if (e.target.closest('#menuBtn')) return setMenu(!open);
+  if (open && (!e.target.closest('#menuPanel') || e.target.closest('.menuitem'))) setMenu(false);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
+document.addEventListener('keydown', e => {                         // Über-Zelle per Tastatur öffnen
+  const u = e.target.closest?.('.board .ueber[role="button"]');
+  if (u && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTrip(depByKey.get(u.closest('.row')?.dataset.key)); }
+});
+
+// Abmelden erst nach Bestätigung
+function askLogout() {
+  showModal(`<h3 class="alhead">Abmelden?</h3>
+    <p>Du wirst auf diesem Gerät abgemeldet. Favoriten, verfolgte Fahrten und Einstellungen im Bot bleiben erhalten.</p>
+    <div class="setbtns" style="justify-content:center"><button type="button" id="logoutYes" class="hammer">Ja, abmelden</button><button type="button" id="loginCancel">Abbrechen</button></div>`);
 }
 
 // Neueste Version zuerst. Bei jeder Änderung an der Website hier eine Zeile ergänzen und VERSION anpassen.
@@ -985,7 +1135,8 @@ document.addEventListener('click', async e => {
 
 function showModal(html, wide) {
   $('#modalBody').innerHTML = html;
-  $('#modalBody').classList.toggle('wide', !!wide);
+  $('#modalBody').classList.toggle('wide', wide === true);
+  $('#modalBody').classList.toggle('trip', wide === 'trip');
   $('#modal').classList.remove('hidden');
 }
 function closeModal(force) {
@@ -1113,7 +1264,9 @@ function trackingHtml() {
 
 document.addEventListener('click', e => {
   if (e.target.closest('#login')) login();
-  else if (e.target.closest('#logout')) logout();
+  else if (e.target.closest('#logout')) askLogout();
+  else if (e.target.closest('#logoutYes')) { closeModal(true); logout(); }
+  else if (e.target.closest('.stoplink')) goStop(e.target.closest('.stoplink').dataset.id, e.target.closest('.stoplink').dataset.name);
   else if (e.target.closest('#updatesBtn')) showUpdates();
   else if (e.target.closest('#settingsBtn')) showSettings();
   else if (e.target.closest('#setDiscard')) closeModal(true);
