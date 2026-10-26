@@ -429,6 +429,8 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.8.1', date: '26.10.2026', items: [
+    'Ein Klick auf „Über“ zeigt nur noch die Fahrt und ihre Halte und schaltet nie mehr das Verfolgen um, auch nicht bei ausfallenden Fahrten' ] },
   { v: '1.8.0', date: '26.10.2026', items: [
     'Aufgeräumte Leiste: Suche, Aktualisieren und Filter, alles andere (Einstellungen, Updates, Abmelden, Darstellung) steckt im Menü rechts',
     'Abmelden fragt vorher nach',
@@ -662,8 +664,8 @@ function rowHtml(d, idx) {
   const bell = session ? `<i class="bell ${tracked.has(d.key) ? 'on' : ''}" title="Fahrt im Telegram-Bot verfolgen">🔔</i>` : '';
   return `<div class="row ${d.cancelled ? 'cancel' : ''} ${session ? 'trackable' : ''}" data-idx="${idx}" data-key="${esc(d.key)}">
     <div class="zeit"><b>${zeitHtml(planned, d.when, delayMin, d.cancelled)}${altHtml(planned, delayMin, d.cancelled)}${info}${bell}</b><small>${vz}${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
-    <div class="nach">${esc(d.direction || '')}${d.tripId && !d.cancelled ? '<button type="button" class="tripbtn">Halte ›</button>' : ''}</div>
-    <div class="ueber" ${d.tripId && !d.cancelled ? 'title="Alle Halte anzeigen" role="button" tabindex="0"' : ''}><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span></div>
+    <div class="nach">${esc(d.direction || '')}${d.tripId ? '<button type="button" class="tripbtn">Halte ›</button>' : ''}</div>
+    <div class="ueber" ${d.tripId ? 'title="Alle Halte anzeigen" role="button" tabindex="0"' : ''}><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span></div>
     <div class="gleis">${d.platform ? `<small>${platformLabel(d.mode)}</small>${esc(d.platform)}` : ''}</div>
   </div>`;
 }
@@ -850,6 +852,7 @@ document.addEventListener('click', e => {
   if (alk) return showAlerts(depByKey.get(alk.closest('.row')?.dataset.key));
   const tr = e.target.closest('.board .ueber[role="button"], .tripbtn');
   if (tr) return openTrip(depByKey.get(tr.closest('.row')?.dataset.key));
+  if (e.target.closest('.board .ueber')) return;                    // ein Klick auf „Über“ schaltet nie das Verfolgen um
   const un = e.target.closest('.untrack');
   if (un) return untrack(un.dataset.key);
   const row = e.target.closest('.row.trackable');
