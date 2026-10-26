@@ -125,6 +125,32 @@
   .alertlink.info:hover { opacity: 1; }
   .modal .altext { text-align: left; white-space: pre-line; margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); font-size: 14px; max-height: 40vh; overflow: auto; }
   .modal .alhead { margin: 0 0 8px; font-size: 17px; }
+  .modal .card.wide { max-width: 560px; text-align: left; max-height: 90vh; overflow: auto; }
+  .modal .card.wide .alhead { font-size: 20px; margin: 0 0 6px; }
+  .setsec { padding: 12px 0; border-top: 1px solid var(--border, rgba(255,255,255,.2)); }
+  .setsec h4 { margin: 0 0 8px; font-size: 15px; }
+  .setsec h5 { margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; opacity: .75; }
+  .setrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0; flex-wrap: wrap; }
+  .sw { display: flex; align-items: center; gap: 8px; }
+  .fld { display: block; font-size: 14px; }
+  .modal .card input[type=text], .modal .card input[type=number], .modal .card input[type=search], .modal .card input:not([type]) {
+    background: var(--surface, rgba(255,255,255,.1)); color: var(--white); border: 1px solid var(--border, rgba(255,255,255,.3)); border-radius: 10px;
+    padding: 8px 10px; font: inherit; font-size: 16px; }
+  .fld input, #memQ { width: 100%; margin-top: 4px; }
+  .num input { width: 84px; text-align: right; }
+  .modal .card input:focus-visible, .modal .card button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hint { font-size: 12.5px; opacity: .75; margin: 6px 0 0; line-height: 1.4; }
+  .setmsg { min-height: 20px; font-size: 14px; margin: 8px 0; }
+  .setmsg.good { color: #3fb950; } .setmsg.bad { color: #ff6b61; } .setmsg.warn { color: var(--accent); }
+  .setbtns { display: flex; gap: 8px; margin-bottom: 10px; }
+  .modal .card button.primary { background: var(--accent); color: var(--tab-on); border-color: transparent; font-weight: 600; }
+  .modal .card button.danger { color: #ff6b61; border-color: currentColor; }
+  .modal .card button:disabled { opacity: .5; }
+  .memrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line, rgba(255,255,255,.12)); flex-wrap: wrap; }
+  .memrow .role { display: block; font-size: 12.5px; opacity: .7; }
+  .memact { display: flex; gap: 6px; flex-wrap: wrap; }
+  .memact button, .memrow + * button { margin-top: 0; }
+  .hist { margin: 0; padding-left: 18px; font-size: 13px; opacity: .85; }
   .modal .updlist { text-align: left; max-height: 55vh; overflow: auto; margin: 6px 0 10px; }
   .modal .upd { padding: 8px 0; border-top: 1px solid var(--border, rgba(255,255,255,.2)); }
   .modal .upd:first-child { border-top: 0; }
@@ -323,6 +349,11 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.5.0', date: '26.10.2026', items: [
+    'Neuer Knopf Einstellungen: Anzeigename, automatisches Löschen (3 bis 47 Stunden) und eigene Erinnerungszeiten vor der Fahrt',
+    'Dieselben Einstellungen gibt es in Telegram mit /einstellungen',
+    'Der Bot spricht dich in Erinnerungen mit deinem Namen an, wenn du einen festlegst',
+    'Besitzer und Verwalter: Mitglieder und Einladungen verwalten, auf der Website und mit /mitglieder' ] },
   { v: '1.4.3', date: '26.10.2026', items: [
     'Icon wieder die kleine Tafel in Marineblau und Gelb' ] },
   { v: '1.4.2', date: '26.10.2026', items: [
@@ -694,7 +725,10 @@ async function bot(method, path, body) {
   if (body) headers['Content-Type'] = 'application/json';
   const r = await fetch(BOT_API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (r.status === 401 && session) { logout(true); throw new Error('abgemeldet'); }
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  if (!r.ok) {
+    const msg = (await r.json().catch(() => ({}))).error;      // verständliche Meldung des Bots, z. B. bei ungültigen Werten
+    throw new Error(msg || 'HTTP ' + r.status);
+  }
   return r.json();
 }
 
@@ -702,7 +736,7 @@ function renderAcct() {
   $('#acct').classList.toggle('hidden', !BOT_API);
   $('#trackTab').classList.toggle('hidden', !BOT_API || !session);
   $('#acct').innerHTML = session
-    ? `<button class="chip" id="updatesBtn" title="Was ist neu?">v${VERSION}</button><button class="chip" id="logout" title="Abmelden">👤 ${esc(session.name || 'Angemeldet')} ✕</button>`
+    ? `<button class="chip" id="settingsBtn" title="Einstellungen">⚙ Einstellungen</button><button class="chip" id="updatesBtn" title="Was ist neu?">v${VERSION}</button><button class="chip" id="logout" title="Abmelden">👤 ${esc(session.name || 'Angemeldet')} ✕</button>`
     : '<button class="chip" id="login">Mit Telegram anmelden</button>';
 }
 
@@ -713,11 +747,190 @@ function showUpdates() {
   showModal(`<h3 class="alhead">Updates</h3><div class="updlist">${list}</div><button id="loginCancel">Schließen</button>`);
 }
 
-function showModal(html) {
+// ---------- Einstellungen und Mitgliederverwaltung ----------
+// Alles liegt im Bot (dieselben Werte wie in Telegram). Hier wird nur angezeigt, vorab geprüft und gesendet.
+let setCur = null;        // zuletzt gespeicherte Einstellungen
+let setAdmin = null;      // Mitglieder, Einladungen und Verlauf (nur für Besitzer und Verwalter)
+let setDirty = false;
+const byId = id => document.getElementById(id);
+const when = ts => new Date(ts * 1000).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+
+async function showSettings() {
+  showModal('<p>Einstellungen werden geladen …</p>', true);
+  setDirty = false;
+  try {
+    setCur = await bot('GET', '/settings');
+    setAdmin = setCur.admin ? await bot('GET', '/members') : null;
+  } catch (e) {
+    return showModal(`<p>Die Einstellungen konnten nicht geladen werden (${esc(e.message)}).</p><button id="loginCancel">Schließen</button>`);
+  }
+  showModal(settingsHtml(setCur), true);
+  if (setAdmin) renderMembers();
+}
+
+function settingsHtml(s) {
+  const a = s.autoclear, r = s.remind;
+  const rem = (n, v) => `<div class="setrow"><label class="sw"><input type="checkbox" id="rem${n}on" ${v ? 'checked' : ''}> ${n}. Erinnerung</label>
+    <span class="num"><input type="number" id="rem${n}" min="${r.min}" max="${r.max}" step="1" inputmode="numeric" value="${v || r.default[n - 1]}" ${v ? '' : 'disabled'} aria-label="${n}. Erinnerung in Minuten"> Minuten vorher</span></div>`;
+  return `<h3 class="alhead">Einstellungen</h3>
+  <form id="setForm" novalidate>
+    <section class="setsec"><h4>Persönliches Profil</h4>
+      <label class="fld">Anzeigename<input id="setNick" maxlength="30" value="${esc(s.nick)}" placeholder="z. B. Dave" autocomplete="off"></label>
+      <p class="hint">Mit diesem Namen spricht dich der Bot in Erinnerungen an. Leer lassen für neutrale Nachrichten.</p></section>
+    <section class="setsec"><h4>Automatische Löschung</h4>
+      <div class="setrow"><label class="sw"><input type="checkbox" id="acOn" ${a.on ? 'checked' : ''}> Nachrichten im Telegram-Chat automatisch löschen</label></div>
+      <div class="setrow"><label for="acH">Löschen nach</label><span class="num"><input type="number" id="acH" min="${a.min}" max="${a.max}" step="1" inputmode="numeric" value="${a.hours}"> Stunden</span></div>
+      <p class="hint">Mindestens ${a.min}, höchstens ${a.max} Stunden, weil Telegram dem Bot nur Nachrichten der letzten 48 Stunden zu löschen erlaubt. Betroffen sind Nachrichten in deinem Chat mit dem Bot, die er sich ab dem Einschalten gemerkt hat, seine eigenen und deine. Favoriten, verfolgte Fahrten und Einstellungen bleiben erhalten.</p></section>
+    <section class="setsec"><h4>Fahrtbenachrichtigungen</h4>${rem(1, r.first)}${rem(2, r.second)}
+      <p class="hint">Gilt für alle verfolgten Fahrten. Die erste Erinnerung muss früher kommen (mehr Minuten) als die zweite. Standard: ${r.default[0]} und ${r.default[1]} Minuten.</p></section>
+    <div id="setMsg" class="setmsg" role="status" aria-live="polite"></div>
+    <div class="setbtns"><button type="submit" class="primary" id="setSave">Speichern</button><button type="button" id="setReset">Zurücksetzen</button></div>
+  </form>
+  ${s.admin ? '<section class="setsec" id="memSec"><h4>Mitgliederverwaltung</h4><input type="search" id="memQ" placeholder="Mitglied suchen" autocomplete="off" aria-label="Mitglied suchen"><div id="memBox"></div></section>' : ''}
+  <button id="loginCancel">Schließen</button>`;
+}
+
+// Formularwerte lesen und prüfen (der Bot prüft alles noch einmal selbst)
+function readSettings() {
+  const num = id => byId(id).value.trim() === '' ? NaN : Number(byId(id).value);
+  const s = setCur;
+  const out = { nick: byId('setNick').value.trim() || null, autoclear_on: byId('acOn').checked, autoclear_hours: num('acH'),
+    remind_first: byId('rem1on').checked ? num('rem1') : null, remind_second: byId('rem2on').checked ? num('rem2') : null };
+  let err = '';
+  if (!Number.isInteger(out.autoclear_hours) || out.autoclear_hours < s.autoclear.min || out.autoclear_hours > s.autoclear.max)
+    err = `Die Löschzeit muss eine ganze Zahl von ${s.autoclear.min} bis ${s.autoclear.max} Stunden sein.`;
+  for (const [k, n] of [['remind_first', 1], ['remind_second', 2]])
+    if (!err && out[k] !== null && (!Number.isInteger(out[k]) || out[k] < s.remind.min || out[k] > s.remind.max))
+      err = `Die ${n}. Erinnerung muss eine ganze Zahl von ${s.remind.min} bis ${s.remind.max} Minuten sein.`;
+  if (!err && out.remind_first && out.remind_second && out.remind_first <= out.remind_second)
+    err = 'Die erste Erinnerung muss früher kommen als die zweite (mehr Minuten) und beide Zeiten müssen verschieden sein.';
+  if (!err && out.nick && out.nick.length > 30) err = 'Der Name darf höchstens 30 Zeichen lang sein.';
+  return { out, err };
+}
+
+function settingsChanged() {
+  const { out } = readSettings(), s = setCur;
+  return (out.nick || '') !== s.nick || out.autoclear_on !== s.autoclear.on || out.autoclear_hours !== s.autoclear.hours
+    || out.remind_first !== s.remind.first || out.remind_second !== s.remind.second;
+}
+
+function fillSettings(s) {
+  byId('setNick').value = s.nick;
+  byId('acOn').checked = s.autoclear.on;
+  byId('acH').value = s.autoclear.hours;
+  for (const [n, v] of [[1, s.remind.first], [2, s.remind.second]]) {
+    byId('rem' + n + 'on').checked = !!v;
+    byId('rem' + n).value = v || s.remind.default[n - 1];
+    byId('rem' + n).disabled = !v;
+  }
+}
+
+function setMessage(text, kind) {
+  const m = byId('setMsg');
+  if (m) { m.textContent = text; m.className = 'setmsg ' + (kind || ''); }
+}
+
+function settingsGuard() {
+  if (!setDirty || !byId('setForm')) return false;
+  const m = byId('setMsg');
+  m.className = 'setmsg warn';
+  m.innerHTML = 'Es gibt ungespeicherte Änderungen. <button type="button" id="setDiscard">Verwerfen und schließen</button>';
+  return true;
+}
+window.addEventListener('beforeunload', e => { if (setDirty) { e.preventDefault(); e.returnValue = ''; } });
+
+document.addEventListener('input', e => {
+  if (!e.target.closest('#setForm')) return;
+  if (e.target.id === 'rem1on' || e.target.id === 'rem2on') byId(e.target.id.replace('on', '')).disabled = !e.target.checked;
+  setDirty = settingsChanged();
+  setMessage(setDirty ? 'Ungespeicherte Änderungen' : '', setDirty ? 'warn' : '');
+});
+
+document.addEventListener('submit', async e => {
+  if (e.target.id !== 'setForm') return;
+  e.preventDefault();
+  const { out, err } = readSettings();
+  if (err) return setMessage(err, 'bad');
+  byId('setSave').disabled = true;
+  try {
+    setCur = await bot('POST', '/settings', out);
+    fillSettings(setCur);
+    setDirty = false;
+    setMessage('Gespeichert. Gilt sofort auch in Telegram.', 'good');
+  } catch (ex) {
+    setMessage('Nicht gespeichert: ' + ex.message, 'bad');
+  }
+  byId('setSave').disabled = false;
+});
+
+document.addEventListener('click', e => {
+  if (e.target.id === 'setReset') {
+    fillSettings(setCur);
+    setDirty = false;
+    setMessage('Zurückgesetzt auf die gespeicherten Werte.', '');
+  }
+});
+
+function renderMembers() {
+  const d = setAdmin, box = byId('memBox');
+  if (!d || !box) return;
+  const q = (byId('memQ').value || '').trim().toLowerCase();
+  const rows = d.members.filter(m => !q || (m.name + ' ' + m.role).toLowerCase().includes(q)).map(m =>
+    `<div class="memrow"><div><b>${esc(m.name)}</b><span class="role">${esc(m.role)}${m.inviter ? ' · darf einladen' : ''}</span></div>${m.removable
+      ? `<div class="memact"><button type="button" data-act="inviter" data-ref="${esc(m.ref)}" data-on="${m.inviter ? 0 : 1}">${m.inviter ? 'Einladen entziehen' : 'Einladen erlauben'}</button>
+         <button type="button" class="danger" data-act="remove" data-ref="${esc(m.ref)}">Entfernen</button></div>` : ''}</div>`).join('') || '<p class="hint">Keine Treffer.</p>';
+  const inv = d.invites.map(i => `<div class="memrow"><div><code>/code ${esc(i.code)}</code><span class="role">von ${esc(i.by)} · gültig bis ${when(i.expires)}</span></div>
+    <div class="memact"><button type="button" data-act="copy" data-code="${esc(i.code)}">Kopieren</button><button type="button" data-act="revoke" data-code="${esc(i.code)}">Widerrufen</button></div></div>`).join('')
+    || '<p class="hint">Keine offenen Einladungen.</p>';
+  const hist = d.history.slice(0, 8).map(h => `<li>${esc(h.status)}${h.who ? ' (' + esc(h.who) + ')' : ''} · ${when(h.ts)}</li>`).join('');
+  box.innerHTML = `<h5>Mitglieder</h5>${rows}
+    <h5>Einladungen</h5><button type="button" class="primary" data-act="invite">Neue Einladung erstellen</button>${inv}
+    <p class="hint">Eine Einladung gilt 24 Stunden, nur einmal, und gibt nur Mitglieder-Zugang, nie Verwaltungsrechte. Die Person schickt dem Bot die Zeile „/code …“.</p>
+    ${hist ? '<h5>Verlauf</h5><ul class="hist">' + hist + '</ul>' : ''}<div id="memMsg" class="setmsg" role="status" aria-live="polite"></div>`;
+}
+
+document.addEventListener('input', e => { if (e.target.id === 'memQ') renderMembers(); });
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('#memBox [data-act]');
+  if (!b) return;
+  const act = b.dataset.act, say = (t, k) => { const m = byId('memMsg'); if (m) { m.textContent = t; m.className = 'setmsg ' + (k || ''); } };
+  if (act === 'copy') {
+    try { await navigator.clipboard.writeText('/code ' + b.dataset.code); say('Kopiert.', 'good'); } catch { say('Kopieren nicht möglich, bitte von Hand markieren.', 'bad'); }
+    return;
+  }
+  if (act === 'remove' && b.dataset.sure !== '1') {               // erst nachfragen, dann entfernen
+    b.dataset.sure = '1';
+    b.textContent = 'Wirklich entfernen?';
+    setTimeout(() => { if (b.isConnected) { b.dataset.sure = ''; b.textContent = 'Entfernen'; } }, 4000);
+    return;
+  }
+  b.disabled = true;
+  try {
+    const call = { invite: () => bot('POST', '/members/invite'),
+      revoke: () => bot('DELETE', '/members/invite?code=' + encodeURIComponent(b.dataset.code)),
+      inviter: () => bot('POST', '/members/inviter', { ref: b.dataset.ref, on: b.dataset.on === '1' }),
+      remove: () => bot('DELETE', '/members?ref=' + encodeURIComponent(b.dataset.ref)) }[act];
+    setAdmin = await call();
+    renderMembers();
+    say(setAdmin.message || '', 'good');
+  } catch (ex) {
+    b.disabled = false;
+    say(ex.message, 'bad');
+  }
+});
+
+function showModal(html, wide) {
   $('#modalBody').innerHTML = html;
+  $('#modalBody').classList.toggle('wide', !!wide);
   $('#modal').classList.remove('hidden');
 }
-function closeModal() { $('#modal').classList.add('hidden'); loginPoll = null; }
+function closeModal(force) {
+  if (!force && settingsGuard()) return;
+  setDirty = false;
+  $('#modal').classList.add('hidden');
+  loginPoll = null;
+}
 
 let loginPoll = null;
 async function login() {
@@ -839,6 +1052,8 @@ document.addEventListener('click', e => {
   if (e.target.closest('#login')) login();
   else if (e.target.closest('#logout')) logout();
   else if (e.target.closest('#updatesBtn')) showUpdates();
+  else if (e.target.closest('#settingsBtn')) showSettings();
+  else if (e.target.closest('#setDiscard')) closeModal(true);
   else if (e.target.closest('#loginCancel') || e.target === $('#modal')) closeModal();
 });
 

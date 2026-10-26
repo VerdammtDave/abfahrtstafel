@@ -35,7 +35,8 @@ dem Code, die nächste Nachricht ist die Antwort (wartet 5 Minuten). Ein Befehl 
 | `/pause`, `/weiter` | Benachrichtigungen aus/an |
 | `/menue` | Tasten-Menü wieder anzeigen. Die Taste "Ausblenden" blendet es aus, mit dem Tastatur-Symbol im Eingabefeld klappt man es ein und aus |
 | `/clear` | Chatverlauf löschen (Telegram erlaubt nur Nachrichten der letzten 48 Stunden). Favoriten und Tracking bleiben |
-| `/autoclear` | Nachrichten automatisch nach 47 Stunden löschen, an oder aus (`/autoclear an`, `/autoclear aus`, oder über die Taste). Gilt ab dem Einschalten |
+| `/autoclear` | Nachrichten automatisch löschen, an oder aus (`/autoclear an`, `/autoclear aus`, oder über die Taste). Gilt ab dem Einschalten, die Zeit stellt man in `/einstellungen` ein (Standard 47 Stunden) |
+| `/einstellungen` | Menü mit Tasten: Anzeigename, automatisches Löschen (3 bis 47 Stunden) und die zwei Erinnerungen vor einer Fahrt. Gilt für alle, die den Bot nutzen dürfen, auch Gäste |
 | `/status` | Einstellungen und Zeit der letzten Prüfung |
 
 Favoriten sind nur eine Liste für den schnellen Zugriff und melden nichts von selbst.
@@ -71,7 +72,12 @@ Nach 10 falschen Codes pro Stunde sperrt der Bot weitere Versuche dieses Nutzers
 Der Besitzer schickt `/code` ohne Code und bekommt eine Zeile `/code ABCD2345`. Wer sie dem Bot schickt, wird Mitglied
 und darf alles außer `/mitglieder` (eigene Favoriten, Tracking, wiederkehrende Fahrten, eigener Chat-Zustand).
 Der Einladungscode gilt 24 Stunden und nur für eine Person; der Besitzer bekommt eine Meldung, wenn er eingelöst wird.
-`/mitglieder` zeigt alle Eingeladenen und entfernt Zugänge (inklusive deren Favoriten und Tracking).
+`/mitglieder` zeigt alle Eingeladenen und entfernt Zugänge (inklusive deren Favoriten, Tracking und Einstellungen). Dort gibt es auch die Knöpfe
+„Neue Einladung“, „Offene Einladungen“ (mit Widerrufen und den zuletzt erledigten) und pro Person „Details“. Dasselbe gibt es auf der Website unter
+Einstellungen, Mitgliederverwaltung (nur Besitzer und Verwalter).
+Eine Einladung gibt nur den Mitglieder-Zugang, nie Verwaltungsrechte. Sie ist 24 Stunden gültig, einmal einlösbar und lässt sich widerrufen.
+Widerrufene, abgelaufene und eingelöste Codes funktionieren nicht mehr. Der Verlauf (ohne Codes) steht in `data.json` unter `invite_hist`.
+Einladungen des Verwalters kann nur er selbst widerrufen.
 
 ## Website (Abfahrtstafel unter eigener Adresse)
 
@@ -170,7 +176,47 @@ Beim Start schreibt der Bot nur "Verwalter gesetzt: ja" oder "nein" ins Log, nie
 
 ### Auto-Löschen
 
-Pro Chat einschaltbar (Taste "Auto-Löschen" oder `/autoclear an`). Telegram erlaubt Bots nur, Nachrichten der letzten 48 Stunden zu löschen, deshalb löscht der Bot nach 47 Stunden.
+Pro Chat einschaltbar (Taste "Auto-Löschen" oder `/autoclear an`). Telegram erlaubt Bots nur, Nachrichten der letzten 48 Stunden zu löschen, deshalb ist 47 Stunden der Standard und zugleich das Höchste, was einstellbar ist.
+Die Zeit stellt jede Person für sich ein (3 bis 47 Stunden, `autoclear_h` im Chat-Eintrag). Der Hintergrunddienst liest sie bei jedem Durchlauf neu,
+eine Änderung gilt deshalb ohne Neustart und ohne Timer für alle bereits gemerkten Nachrichten (kürzer: ältere werden beim nächsten Durchlauf gelöscht).
 Dafür merkt er sich die Nachrichten-IDs und Zeitpunkte der Chats, die es eingeschaltet haben (nicht den Inhalt), höchstens 5000 pro Chat, in `data.json` unter `msglog`.
 Ausgeschaltet werden keine IDs gespeichert. Ein Hintergrunddienst prüft alle 5 Minuten, was fällig ist.
 
+## Persönliche Einstellungen
+
+Gespeichert pro Person in `data.json` unter `chats.<Chat-ID>`. Website (Einstellungen) und Telegram (`/einstellungen`) lesen und schreiben dieselben Werte,
+eine Änderung gilt also überall sofort. Jede Person ändert nur ihre eigenen Werte, die Chat-ID kommt immer aus der Sitzung oder dem Telegram-Chat, nie aus der Anfrage.
+
+| Einstellung | Feld | Standard | Gültig |
+|---|---|---|---|
+| Anzeigename | `nick` | keiner | bis 30 Zeichen, ohne Steuerzeichen. Nur für die Anrede, nie für Rechte oder Anmeldung |
+| Auto-Löschen an/aus | `autoclear` | aus | |
+| Löschen nach | `autoclear_h` | 47 Stunden | 3 bis 47 (Telegram erlaubt dem Bot nur 48) |
+| Erste und zweite Erinnerung | `remind` = `[erste, zweite]` | 15 und 5 Minuten | je 1 bis 120 oder aus, die erste muss mehr Minuten haben als die zweite |
+
+- Fehlt ein Feld, gilt der Standard. Bestehende Nutzer behalten dadurch ihr bisheriges Verhalten. `migrate()` läuft bei jedem Start, ist wiederholbar,
+  ändert keine gültigen Daten und entfernt nur ungültige gespeicherte Werte.
+- Erinnerungen: Mit Namen lautet die erste „Hallo Dave, deine Fahrt beginnt in 15 min“, die zweite und alle anderen Meldungen bleiben neutral. Ohne Namen ändert sich nichts.
+  Nach Abfahrtsbeginn kommt keine Erinnerung mehr. Ändert man die Zeiten bei einer laufenden Fahrt, gelten schon erreichte Zeitpunkte als erledigt (nichts kommt nachträglich oder doppelt).
+- Alles wird serverseitig geprüft (`apply_settings`, `check_hours`, `check_remind`, `check_nick`). Bei einem Fehler wird nichts gespeichert.
+
+### Web-API
+
+Alle Aufrufe mit `Authorization: Bearer <Sitzung>` (kein Cookie, daher kein CSRF-Risiko). Fehler kommen als `{"error": "verständlicher Text"}` mit Status 400.
+
+| Aufruf | Wer | Was |
+|---|---|---|
+| `GET /settings` | angemeldet | eigene Einstellungen |
+| `POST /settings` | angemeldet | `nick`, `autoclear_on`, `autoclear_hours`, `remind_first`, `remind_second` (nur die gesendeten Felder, `null` = aus oder entfernen) |
+| `GET /members` | Besitzer, Verwalter | Mitglieder (mit nicht umkehrbarer `ref` statt Chat-ID), offene Einladungen, Verlauf |
+| `POST /members/invite` | Besitzer, Verwalter | neue Einladung |
+| `DELETE /members/invite?code=` | Besitzer, Verwalter | Einladung widerrufen |
+| `POST /members/inviter` | Besitzer, Verwalter | `{"ref", "on"}` Einladen erlauben oder entziehen |
+| `DELETE /members?ref=` | Besitzer, Verwalter | Mitglied entfernen. Der Verwalter geht nie |
+
+Mitglieder deaktivieren (ohne zu entfernen) gibt es nicht, es bleibt beim Entfernen.
+
+### Tests
+
+`python3 bot/test_einstellungen.py` prüft Name, Löschzeit, Erinnerungen, die Menüs in Telegram, die Web-API, Einladungen (erstellen, einlösen, widerrufen, ablaufen),
+manipulierte Anfragen und Knöpfe sowie das Speichern über einen Neustart. Er läuft zusätzlich zu `test_rechte.py`.

@@ -31,7 +31,8 @@ Der Kommentarblock "REGELN FUER SPAETERE AENDERUNGEN" steht in `bot/abfahrtsbot.
 
 ## Allgemeine Regeln
 
-- **Vor jedem Commit** `python3 bot/test_rechte.py` ausführen. Er muss bestehen. Zusätzlich `python3 -m py_compile bot/abfahrtsbot.py`.
+- **Vor jedem Commit** `python3 bot/test_rechte.py` und `python3 bot/test_einstellungen.py` ausführen. Beide müssen bestehen. Zusätzlich `python3 -m py_compile bot/abfahrtsbot.py`.
+- Persönliche Einstellungen (Name, Löschzeit, Erinnerungen) liegen pro Chat in `data["chats"]` und werden nur über `apply_settings` geändert (Website und Telegram gemeinsam). Neue Einstellungen dort mit Standardwert und Prüfung ergänzen.
 - Bei jeder sichtbaren Änderung an der Website einen Eintrag oben in `UPDATES` in `index.html` ergänzen (neue Versionsnummer, Datum, kurze Stichpunkte in einfacher Sprache). Die Liste sehen nur angemeldete Nutzer.
 - Bei Sicherheitsfixes immer einen leicht verständlichen Bericht für das Team ohne Fachjargon anlegen.
 - `bot/config.json` und `bot/data.json` nie einchecken. Der Bot-Token gehört nie in das Repo, in Logs oder in Antworten.

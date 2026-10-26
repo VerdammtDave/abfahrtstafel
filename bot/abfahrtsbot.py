@@ -84,9 +84,152 @@ msg_lock = threading.Lock()        # eigener Lock, weil send() auch unter dem Ha
 msg_dirty = False
 
 
+AUTOCLEAR_MIN_HOURS = 3            # kuerzer ist nicht erlaubt, das hoechste ist AUTOCLEAR_HOURS (Telegram-Grenze)
+REMIND_AT = (15, 5)                # Standard: Erinnerung so viele Minuten vor Abfahrt
+REMIND_MIN, REMIND_MAX = 1, 120    # erlaubter Bereich je Erinnerung in Minuten
+NICK_MAX = 30
+
+
 def autoclear_on(cid):
     chat = data["chats"].get(str(cid))
     return bool(chat and chat.get("autoclear"))
+
+
+# ---------- Persoenliche Einstellungen (Website und Telegram nutzen dieselben Werte in data["chats"][cid]) ----------
+
+def clear_hours_value(chat):
+    h = (chat or {}).get("autoclear_h")
+    return h if isinstance(h, int) and not isinstance(h, bool) and AUTOCLEAR_MIN_HOURS <= h <= AUTOCLEAR_HOURS else AUTOCLEAR_HOURS
+
+
+def clear_hours(cid):
+    """Nach so vielen Stunden werden Nachrichten dieses Chats geloescht (Standard 47)."""
+    return clear_hours_value(data["chats"].get(str(cid)))
+
+
+def remind_pair(chat):
+    """(erste, zweite) Erinnerung in Minuten vor Abfahrt, None = aus. Ohne eigene Werte gilt der Standard 15 und 5."""
+    r = (chat or {}).get("remind")
+    if isinstance(r, list) and len(r) == 2:
+        try:
+            return check_remind(r[0], r[1])
+        except ValueError:
+            pass
+    return REMIND_AT
+
+
+def active_remind(chat):
+    return [t for t in remind_pair(chat) if t]
+
+
+def nick_of(cid):
+    return (data["chats"].get(str(cid)) or {}).get("nick") or ""
+
+
+def parse_number(v, einheit):
+    """Zahl aus Zahl oder Text wie '12', '12 h', '30 min'. Alles andere ist ein Fehler."""
+    if isinstance(v, bool):
+        raise ValueError("Bitte eine Zahl angeben.")
+    if isinstance(v, int):
+        return v
+    m = re.fullmatch(r"\s*(\d{1,4})\s*(" + einheit + r")?\s*", str(v or ""), re.I)
+    if not m:
+        raise ValueError("Bitte eine ganze Zahl angeben.")
+    return int(m.group(1))
+
+
+def check_hours(v):
+    h = parse_number(v, "h|std|stunden")
+    if h < AUTOCLEAR_MIN_HOURS:
+        raise ValueError(f"Mindestens {AUTOCLEAR_MIN_HOURS} Stunden.")
+    if h > AUTOCLEAR_HOURS:
+        raise ValueError(f"Höchstens {AUTOCLEAR_HOURS} Stunden, denn Telegram erlaubt dem Bot nur Nachrichten der letzten 48 Stunden zu löschen.")
+    return h
+
+
+def check_minutes(v):
+    """Eine Erinnerung: Minuten vor Abfahrt, oder None (aus)."""
+    if v is None or (isinstance(v, str) and v.strip().lower() in ("aus", "off", "")):
+        return None
+    m = parse_number(v, "min|minuten")
+    if not REMIND_MIN <= m <= REMIND_MAX:
+        raise ValueError(f"Die Erinnerung muss zwischen {REMIND_MIN} und {REMIND_MAX} Minuten vor der Abfahrt liegen.")
+    return m
+
+
+def check_remind(first, second):
+    a, b = check_minutes(first), check_minutes(second)
+    if a and b and a <= b:
+        raise ValueError("Die erste Erinnerung muss früher kommen als die zweite, also mehr Minuten vor der Abfahrt haben, und die beiden Zeiten müssen verschieden sein.")
+    return a, b
+
+
+def check_nick(v):
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        raise ValueError("Der Name muss Text sein.")
+    v = " ".join(v.split())
+    if len(v) > NICK_MAX:
+        raise ValueError(f"Der Name darf höchstens {NICK_MAX} Zeichen lang sein.")
+    if any(ord(c) < 32 or ord(c) == 127 for c in v):
+        raise ValueError("Der Name enthält ungültige Zeichen.")
+    return v
+
+
+def settings_view(cid):
+    """Alle persoenlichen Einstellungen einer Person (Aufrufer haelt den Lock)."""
+    chat = get_chat(cid)
+    a, b = remind_pair(chat)
+    return {"nick": chat.get("nick") or "",
+            "autoclear": {"on": bool(chat.get("autoclear")), "hours": clear_hours(cid),
+                          "min": AUTOCLEAR_MIN_HOURS, "max": AUTOCLEAR_HOURS, "default": AUTOCLEAR_HOURS},
+            "remind": {"first": a, "second": b, "min": REMIND_MIN, "max": REMIND_MAX, "default": list(REMIND_AT)}}
+
+
+def resync_reminders(cid, chat):
+    """Nach geaenderten Vorwarnzeiten: bereits erreichte Zeitpunkte gelten als erledigt, damit nichts nachtraeglich
+    oder doppelt gesendet wird. Noch nicht erreichte werden mit den neuen Werten ganz normal ausgeloest."""
+    state = data["state"].get(str(cid), {})
+    active = active_remind(chat)
+    now = time.time()
+    for w in chat.get("trips", []):
+        st = state.get("w_" + str(w.get("wid")))
+        if st and st.get("eta"):
+            mins = (st["eta"] - now) / 60
+            st["rem"] = [t for t in active if mins <= t + REMIND_TOLERANCE]
+
+
+def apply_settings(cid, ch):
+    """Einstellungen ueberpruefen und speichern. ch darf diese Schluessel enthalten: nick, autoclear_on, autoclear_hours,
+    remind_first, remind_second. Wirft ValueError mit verstaendlicher Meldung. Es wird erst gespeichert, wenn alles stimmt."""
+    global msg_dirty
+    with lock:
+        chat = get_chat(cid)
+        new = {}
+        if "nick" in ch:
+            new["nick"] = check_nick(ch["nick"])
+        if "autoclear_hours" in ch:
+            new["autoclear_h"] = check_hours(ch["autoclear_hours"])
+        if "autoclear_on" in ch:
+            if not isinstance(ch["autoclear_on"], bool):
+                raise ValueError("Ungültige Eingabe.")
+            new["autoclear"] = ch["autoclear_on"]
+        a, b = remind_pair(chat)
+        if "remind_first" in ch or "remind_second" in ch:
+            a, b = check_remind(ch["remind_first"] if "remind_first" in ch else a,
+                                ch["remind_second"] if "remind_second" in ch else b)
+            new["remind"] = [a, b]
+        chat.update(new)
+        if "remind" in new:
+            resync_reminders(cid, chat)
+        save()
+        out = settings_view(cid)
+    if new.get("autoclear") is False:
+        with msg_lock:
+            msg_log.pop(cid, None)
+            msg_dirty = True
+    return out
 
 
 def log_message(cid, mid):
@@ -192,21 +335,22 @@ def wanted(f, d):
     return not f.get("lines") or d["lk"] in f["lines"]
 
 
-REMIND_AT = (15, 5)        # Erinnerung so viele Minuten vor Abfahrt
 REMIND_TOLERANCE = 2 / 60  # 2 Sekunden Toleranz: lieber knapp zu frueh als zu spaet
 REMIND_LEAD = 1.0          # so viele Sekunden vor dem Zeitpunkt wird abgefragt (Abfrage und Versand brauchen Zeit)
 
 
-def decide_trip(prev, d, now):
+def decide_trip(prev, d, now, remind_at=REMIND_AT):
     """Einzeln beobachtete Fahrt. Gibt (Ereignis, alter Wert, neuer Zustand) zurueck.
 
-    Ereignisse: cancel (faellt aus), remind (je einmal 15 und 5 min vor Abfahrt),
+    Ereignisse: cancel (faellt aus), remind (je einmal zu den Zeitpunkten remind_at, Standard 15 und 5 min vor Abfahrt),
     change (Verspaetung hat sich um >= 2 min gegenueber der letzten Meldung geaendert).
+    st["greet"] ist wahr, wenn die erste Erinnerung dabei ist (dann darf der Bot den Namen verwenden).
     """
     # Standardwerte zuerst, damit auch Zustaende aus aelteren Bot-Versionen funktionieren
     st = {"nd": d["delay"], "cancelled": False, "rem": [], **(prev or {})}
+    st["greet"] = False
     if prev and "rem" not in prev:
-        st["rem"] = list(REMIND_AT) if prev.get("reminded") else []
+        st["rem"] = list(remind_at) if prev.get("reminded") else []
     st["t"] = d["planned"].timestamp()
     st["eta"] = d["actual"].timestamp()            # voraussichtliche Abfahrt, daraus werden die Weckzeiten berechnet
     old = st["nd"]
@@ -216,10 +360,12 @@ def decide_trip(prev, d, now):
         return event, old, st
     st["cancelled"] = False
     mins = (d["actual"] - now).total_seconds() / 60
-    due = [t for t in REMIND_AT if mins <= t + REMIND_TOLERANCE and t not in st["rem"]]
+    # nach Abfahrtsbeginn (mins <= 0) wird nichts mehr erinnert, auch wenn eine Pruefung verspaetet kommt
+    due = [t for t in remind_at if 0 < mins <= t + REMIND_TOLERANCE and t not in st["rem"]]
     if due:
         st["rem"] = sorted(set(st["rem"]) | set(due))      # alle bereits erreichten Zeitpunkte als erledigt merken
         st["nd"] = d["delay"]
+        st["greet"] = bool(remind_at) and remind_at[0] in due
         return "remind", old, st
     if abs(d["delay"] - st["nd"]) >= 2:
         st["nd"] = d["delay"]
@@ -231,7 +377,7 @@ def fmt_delay(delay):
     return f"+{delay} min" if delay >= 1 else f"{delay} min" if delay <= -1 else "p\u00fcnktlich"
 
 
-def fmt_trip(event, d, old=None):
+def fmt_trip(event, d, old=None, nick=""):
     icon = "\U0001f68c" if d["kind"] == "bus" else "\U0001f686"
     where = f"\U0001f4cd {d['stop']}" + (f" \u00b7 Gleis/Steig {d['track']}" if d["track"] else "")
     if d["cancelled"]:
@@ -244,7 +390,7 @@ def fmt_trip(event, d, old=None):
     title = {
         "status": "\U0001f514 Wird beobachtet",
         "change": "\U0001f504 \u00c4nderung" + (f" (vorher {fmt_delay(old)})" if old is not None else ""),
-        "remind": f"\u23f0 Abfahrt in {mins} min",
+        "remind": f"\u23f0 Hallo {nick}, deine Fahrt beginnt in {mins} min" if nick else f"\u23f0 Abfahrt in {mins} min",
         "now": "\u2139 Aktueller Stand",
         "routine": "\U0001f501 Wiederkehrende Fahrt heute",
         "shared": "\U0001f517 Geteilte Verbindung",
@@ -306,9 +452,10 @@ def check_trip(cid, chat, w, fetched, now, outbox):
             chat["trips"].remove(w)                      # Fahrt ist vorbei
             state.pop(skey, None)
         return
-    event, old, state[skey] = decide_trip(state.get(skey), d, now)
+    event, old, state[skey] = decide_trip(state.get(skey), d, now, active_remind(chat))
     if event:
-        outbox.append((cid, fmt_trip(event, d, old)))
+        nick = chat.get("nick") if state[skey].get("greet") else ""       # den Namen nur bei der ersten Erinnerung nutzen
+        outbox.append((cid, fmt_trip(event, d, old, nick or "")))
     if d["actual"] < now - timedelta(minutes=2) or event == "cancel":
         chat["trips"].remove(w)                          # abgefahren oder ausgefallen: fertig
         state.pop(skey, None)
@@ -326,7 +473,7 @@ def next_remind_due():
                 st = data["state"].get(cid, {}).get("w_" + str(w.get("wid")))
                 if not st or "eta" not in st or st.get("cancelled") or not w.get("stop"):
                     continue
-                for t in REMIND_AT:
+                for t in active_remind(chat):
                     due = st["eta"] - t * 60 - REMIND_LEAD
                     if t in st.get("rem", []) or due <= now:
                         continue
@@ -419,6 +566,22 @@ def load():
             data.update(json.load(fh))
 
 
+def migrate():
+    """Beim Start ausfuehren, wiederholbar. Alte Daten bleiben unveraendert: Fehlt eine persoenliche Einstellung, gilt der
+    bisherige Standard (47 Stunden, Erinnerungen 15 und 5 Minuten, kein Name). Ungueltige gespeicherte Werte werden entfernt."""
+    data.setdefault("invite_hist", [])
+    for chat in data["chats"].values():
+        if chat.get("autoclear_h") is not None and chat["autoclear_h"] != clear_hours_value(chat):
+            del chat["autoclear_h"]
+        if "remind" in chat and remind_pair(chat) == REMIND_AT and chat["remind"] != list(REMIND_AT):
+            del chat["remind"]
+        if "nick" in chat:
+            try:
+                chat["nick"] = check_nick(chat["nick"])
+            except ValueError:
+                del chat["nick"]
+
+
 def get_chat(cid):
     c = data["chats"].setdefault(str(cid), {
         "favs": [], "threshold": cfg["default_threshold_min"], "paused": False})
@@ -442,11 +605,12 @@ HELP = (
     "/wiederkehrend \u2013 Fahrten, die sich an bestimmten Wochentagen automatisch wiederholen (z. B. Mo\u2013Fr 7:00)\n"
     "/code \u2013 Einladungscode f\u00fcr eine weitere Person erzeugen (Vollzugriff, 24 h g\u00fcltig, einmal nutzbar)\n"
     "/code CODE \u2013 Einladung einl\u00f6sen oder eine geteilte Verbindung ansehen\n"
-    "/mitglieder \u2013 eingeladene Personen ansehen und entfernen\n"
+    "/mitglieder \u2013 eingeladene Personen und Einladungen verwalten\n"
     "/jetzt \u2013 aktuelle Versp\u00e4tungen an deinen Favoriten\n"
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
     "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
-    "/autoclear \u2013 Nachrichten automatisch nach 47 Stunden l\u00f6schen, an oder aus\n"
+    "/autoclear \u2013 Nachrichten automatisch l\u00f6schen, an oder aus\n"
+    "/einstellungen \u2013 Name, automatisches L\u00f6schen und Erinnerungszeiten einstellen\n"
     "/menue \u2013 Tasten-Men\u00fc anzeigen (Taste Ausblenden blendet es aus)\n"
     "/status \u2013 Einstellungen anzeigen\n\n"
     "Tracking: In einer Abfahrtsliste eine Fahrt antippen. Du bekommst sofort den Stand, danach jede \u00c4nderung "
@@ -668,21 +832,22 @@ def cmd_schwelle(cid, arg):
     send(cid, f"Ich melde mich ab {arg} min Versp\u00e4tung.")
 
 
-GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status", "/clear", "/autoclear", "/menue", "/menueaus"}
-GUEST_ACTIONS = {"tw", "tr", "ud", "sh", "sr", "sf", "ac"}
+GUEST_COMMANDS = {"/start", "/hilfe", "/help", "/code", "/tracking", "/pause", "/weiter", "/status", "/clear", "/autoclear", "/menue", "/menueaus", "/einstellungen"}
+GUEST_ACTIONS = {"tw", "tr", "ud", "sh", "sr", "sf", "ac", "st"}
 GUEST_HELP = (
     "Abfahrts-Bot \u2013 du hast Zugriff auf geteilte Verbindungen.\n\n"
     "/code CODE \u2013 geteilte Verbindung ansehen und verfolgen\n"
     "/tracking \u2013 deine verfolgten Fahrten\n"
     "/pause und /weiter \u2013 Benachrichtigungen aus- und einschalten\n"
     "/clear \u2013 Chatverlauf l\u00f6schen (nur Nachrichten der letzten 48 Stunden)\n"
-    "/autoclear \u2013 Nachrichten automatisch nach 47 Stunden l\u00f6schen, an oder aus\n"
+    "/autoclear \u2013 Nachrichten automatisch l\u00f6schen, an oder aus\n"
+    "/einstellungen \u2013 Name, automatisches L\u00f6schen und Erinnerungszeiten einstellen\n"
     "/menue \u2013 Tasten-Men\u00fc anzeigen (Taste Ausblenden blendet es aus)\n"
     "/status \u2013 Einstellungen anzeigen"
 )
 
 
-ADMIN_ACTIONS = {"mrm", "mi"}                             # Mitglieder entfernen, Einladen erlauben: nur Besitzer und Verwalter
+ADMIN_ACTIONS = {"mrm", "mi", "md", "mo", "mx", "mn", "mm"}                             # Mitglieder entfernen, Einladen erlauben: nur Besitzer und Verwalter
 MAX_OPEN_INVITES = 5                                      # offene Einladungscodes pro Einlader
 OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung nur fuer den Besitzer (und den Verwalter)
 VERWALTER_COMMANDS = set()                                # Befehle rund um Server und Betrieb: NUR der Verwalter. Aktuell gibt es keine.
@@ -758,7 +923,7 @@ def may_use(cid, cmd=None, action=None):
 MENU_BUTTONS = {
     "⭐ Favoriten": "/favoriten", "🔍 Suche": "/suche", "🚏 Abfahrten": "/abfahrten", "⏱ Verspätungen": "/jetzt",
     "📌 Verfolgte Fahrten": "/tracking", "🔁 Wiederkehrend": "/wiederkehrend", "🔕 Meldungen aus": "/pause",
-    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder",
+    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🛠 Einstellungen": "/einstellungen", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder",
     "🔑 Einladen": "/code", "🎟 Code eingeben": "/code", "❓ Hilfe": "/hilfe", "🙈 Ausblenden": "/menueaus",
 }
 # Tasten, nach denen der Bot erst noch einen Text braucht (Name der Haltestelle, Code)
@@ -775,14 +940,14 @@ def menu_keyboard(cid):
     if is_full(cid):
         rows = [["⭐ Favoriten", "🔍 Suche"], ["🚏 Abfahrten", "⏱ Verspätungen"],
                 ["📌 Verfolgte Fahrten", "🔁 Wiederkehrend"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
-                ["⚙️ Status", "🕒 Auto-Löschen"], ["🧹 Chat löschen", "🎟 Code eingeben"]]
+                ["⚙️ Status", "🛠 Einstellungen"], ["🕒 Auto-Löschen", "🧹 Chat löschen"], ["🎟 Code eingeben"]]
         extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_admin(cid) else [])
         if extra:
             rows.append(extra)
         rows.append(["❓ Hilfe", "🙈 Ausblenden"])
     elif cid in data["guests"]:
         rows = [["🎟 Code eingeben", "📌 Verfolgte Fahrten"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
-                ["⚙️ Status", "🕒 Auto-Löschen"], ["🧹 Chat löschen", "❓ Hilfe"], ["🙈 Ausblenden"]]
+                ["⚙️ Status", "🛠 Einstellungen"], ["🕒 Auto-Löschen", "🧹 Chat löschen"], ["❓ Hilfe", "🙈 Ausblenden"]]
     else:
         rows = [["🎟 Code eingeben"]]
     return {"keyboard": [[{"text": t} for t in row] for row in rows], "resize_keyboard": True}
@@ -831,9 +996,9 @@ def cmd_clear(cid, mid):
 
 def autoclear_text(cid):
     if autoclear_on(cid):
-        return (f"Auto-Löschen ist AN: Nachrichten in diesem Chat werden nach {AUTOCLEAR_HOURS} Stunden gelöscht "
+        return (f"Auto-Löschen ist AN: Nachrichten in diesem Chat werden nach {clear_hours(cid)} Stunden gelöscht "
                 "(Telegram erlaubt höchstens 48). Es gilt für Nachrichten ab dem Einschalten.")
-    return (f"Auto-Löschen ist AUS. Wenn du es einschaltest, löscht der Bot Nachrichten in diesem Chat nach {AUTOCLEAR_HOURS} Stunden "
+    return (f"Auto-Löschen ist AUS. Wenn du es einschaltest, löscht der Bot Nachrichten in diesem Chat nach {clear_hours(cid)} Stunden "
             "(Telegram erlaubt höchstens 48).")
 
 
@@ -872,11 +1037,145 @@ def handle_autoclear_callback(cb, cid, mid, wert):
         log("Callback-Antwort fehlgeschlagen:", e)
 
 
+# ---------- Einstellungen (/einstellungen) ----------
+# Dieselben Werte wie auf der Website (data["chats"][cid]). Knoepfe: st:<Ansicht oder Aktion>:<Wert>.
+# Eingaben per Text laufen ueber awaiting (wie bei der Suche) und werden wie alles andere zentral geprueft.
+
+SETTING_INPUTS = {"/_name", "/_clearh", "/_r1", "/_r2"}
+SETTING_KEYS = {"/_name": "nick", "/_clearh": "autoclear_hours", "/_r1": "remind_first", "/_r2": "remind_second"}
+SETTING_VIEW = {"/_name": "p", "/_clearh": "c", "/_r1": "r", "/_r2": "r"}
+CLEAR_PRESETS = (3, 5, 12, 24, 47)
+REMIND_PRESETS = (60, 30, 20, 15, 10, 5, 3, 2, 1)
+
+
+def remind_label(m):
+    return f"{m} min vor Abfahrt" if m else "aus"
+
+
+def chunk(items, n):
+    return [items[i:i + n] for i in range(0, len(items), n)]
+
+
+def st_view(cid, view):
+    """Text und Knoepfe einer Ansicht des Einstellungsmenues."""
+    with lock:
+        v = settings_view(cid)
+    nick = v["nick"] or "nicht festgelegt"
+    ac, rm = v["autoclear"], v["remind"]
+    back = [{"text": "⬅️ Zurück", "callback_data": "st:m"}]
+    if view == "p":
+        rows = [[{"text": "✏️ Name festlegen oder ändern", "callback_data": "st:pn"}]]
+        if v["nick"]:
+            rows.append([{"text": "🗑 Name entfernen", "callback_data": "st:px"}])
+        return (f"👤 Mein Profil\n\nName: {nick}\n\nMit diesem Namen spricht dich der Bot in Erinnerungen an. "
+                "Er hat nichts mit deinem Telegram-Namen zu tun und wird nicht für Rechte oder Anmeldung genutzt."), {"inline_keyboard": rows + [back]}
+    if view == "c":
+        an = "AN" if ac["on"] else "AUS"
+        rows = [[{"text": "Ausschalten" if ac["on"] else "Einschalten", "callback_data": "st:co:" + ("0" if ac["on"] else "1")}]]
+        rows += chunk([{"text": ("✅ " if h == ac["hours"] else "") + f"{h} h", "callback_data": f"st:ch:{h}"} for h in CLEAR_PRESETS], 3)
+        rows.append([{"text": "✏️ Eigene Stundenzahl", "callback_data": "st:cc"}])
+        return (f"🕒 Automatische Löschung\n\nStatus: {an}\nLöschen nach: {ac['hours']} Stunden (möglich: {ac['min']} bis {ac['max']})\n\n"
+                "Betroffen sind Nachrichten in diesem Chat, die der Bot sich ab dem Einschalten gemerkt hat: seine eigenen und deine. "
+                "Favoriten, verfolgte Fahrten und Einstellungen bleiben erhalten. "
+                f"Telegram erlaubt dem Bot nur Nachrichten der letzten 48 Stunden zu löschen, darum sind höchstens {ac['max']} Stunden möglich."), {"inline_keyboard": rows + [back]}
+    if view in ("r1", "r2"):
+        num = 1 if view == "r1" else 2
+        aktuell = rm["first"] if num == 1 else rm["second"]
+        rows = chunk([{"text": ("✅ " if t == aktuell else "") + f"{t} min", "callback_data": f"st:s{num}:{t}"} for t in REMIND_PRESETS], 3)
+        rows.append([{"text": "✏️ Eigene Minuten", "callback_data": f"st:s{num}c"}, {"text": "🔕 Ausschalten", "callback_data": f"st:s{num}:off"}])
+        return (f"⏰ {num}. Erinnerung\n\nJetzt: {remind_label(aktuell)}\n\nWie viele Minuten vor der Abfahrt soll ich dich erinnern? "
+                f"Erlaubt sind {rm['min']} bis {rm['max']}. Die erste Erinnerung muss früher kommen als die zweite."), {"inline_keyboard": rows + [[{"text": "⬅️ Zurück", "callback_data": "st:r"}]]}
+    if view == "r":
+        rows = [[{"text": "1. Erinnerung ändern", "callback_data": "st:r1"}], [{"text": "2. Erinnerung ändern", "callback_data": "st:r2"}]]
+        return (f"⏰ Fahrtbenachrichtigungen\n\n1. Erinnerung: {remind_label(rm['first'])}\n2. Erinnerung: {remind_label(rm['second'])}\n\n"
+                f"Gilt für alle verfolgten Fahrten. Standard ist {REMIND_AT[0]} und {REMIND_AT[1]} Minuten vorher."), {"inline_keyboard": rows + [back]}
+    erinn = " und ".join(f"{t} min" for t in (rm["first"], rm["second"]) if t) or "aus"
+    rows = [[{"text": "👤 Mein Profil", "callback_data": "st:p"}], [{"text": "🕒 Automatische Löschung", "callback_data": "st:c"}],
+            [{"text": "⏰ Fahrtbenachrichtigungen", "callback_data": "st:r"}], [{"text": "🏠 Zurück zum Hauptmenü", "callback_data": "st:h"}]]
+    return (f"⚙️ Einstellungen\n\n👤 Name: {nick}\n🕒 Auto-Löschen: " + (f"an, nach {ac['hours']} Stunden" if ac["on"] else "aus") +
+            f"\n⏰ Erinnerungen: {erinn}"), {"inline_keyboard": rows}
+
+
+def cmd_einstellungen(cid):
+    text, kb = st_view(cid, "m")
+    send(cid, text, reply_markup=kb)
+
+
+def ask_setting(cid, ask_cmd, frage):
+    awaiting[cid] = (ask_cmd, time.time())
+    send(cid, frage, reply_markup={"inline_keyboard": [[{"text": "Abbrechen", "callback_data": "st:x"}]]})
+
+
+ASK_TEXT = {"/_name": "Wie soll ich dich nennen? Schreib den Namen, höchstens %d Zeichen." % NICK_MAX,
+            "/_clearh": "Nach wie vielen Stunden sollen Nachrichten gelöscht werden? Schreib eine Zahl von %d bis %d." % (AUTOCLEAR_MIN_HOURS, AUTOCLEAR_HOURS),
+            "/_r1": "Wie viele Minuten vor der Abfahrt soll die erste Erinnerung kommen? Schreib eine Zahl, oder „aus“.",
+            "/_r2": "Wie viele Minuten vor der Abfahrt soll die zweite Erinnerung kommen? Schreib eine Zahl, oder „aus“."}
+
+
+def handle_settings_callback(cb, cid, mid, rest):
+    with lock:
+        if not may_use(cid, action="st"):
+            return
+    cmd, _, arg = rest.partition(":")
+    answer, view, ask = "", "m", None
+    try:
+        if cmd in ("m", "p", "c", "r", "r1", "r2"):
+            view = cmd
+        elif cmd == "h":
+            answer_cb(cb)
+            return cmd_menue(cid)
+        elif cmd == "x":
+            awaiting.pop(cid, None)                          # Eingabe abbrechen
+            answer = "Abgebrochen"
+        elif cmd == "pn":
+            view, ask = "p", "/_name"
+        elif cmd == "px":
+            apply_settings(cid, {"nick": None})
+            view, answer = "p", "Name entfernt"
+        elif cmd == "co":
+            apply_settings(cid, {"autoclear_on": arg == "1"})
+            view, answer = "c", "Gespeichert"
+        elif cmd == "ch":
+            apply_settings(cid, {"autoclear_hours": arg})
+            view, answer = "c", "Gespeichert"
+        elif cmd == "cc":
+            view, ask = "c", "/_clearh"
+        elif cmd in ("s1", "s2"):
+            apply_settings(cid, {"remind_first" if cmd == "s1" else "remind_second": arg})
+            view, answer = "r", "Gespeichert"
+        elif cmd in ("s1c", "s2c"):
+            view, ask = "r", "/_r1" if cmd == "s1c" else "/_r2"
+    except ValueError as e:
+        answer_cb(cb, str(e), alert=True)                    # ungueltiger Wert: nichts wurde gespeichert, Ansicht bleibt
+        return
+    answer_cb(cb, answer)
+    text, kb = st_view(cid, view)
+    edit_or_log(cid, mid, text, kb)
+    if ask:
+        ask_setting(cid, ask, ASK_TEXT[ask])
+
+
+def handle_setting_input(cid, ask_cmd, text, fresh):
+    """Antwort auf eine Frage des Einstellungsmenues. Ungueltiges wird erklaert, die Frage bleibt dann offen."""
+    with lock:
+        erlaubt = may_use(cid, action="st")
+    if not erlaubt:
+        return
+    if not fresh:
+        return send(cid, "Die Eingabe ist abgelaufen. /einstellungen öffnet das Menü erneut.")
+    try:
+        apply_settings(cid, {SETTING_KEYS[ask_cmd]: text})
+    except ValueError as e:
+        return ask_setting(cid, ask_cmd, f"{e}\nBitte noch einmal eingeben oder abbrechen.")
+    view, kb = st_view(cid, SETTING_VIEW[ask_cmd])
+    send(cid, "✅ Gespeichert.\n\n" + view, reply_markup=kb)
+
+
 def autoclear_step():
-    """Nachrichten loeschen, die aelter als AUTOCLEAR_HOURS sind, und das Protokoll sichern."""
+    """Nachrichten loeschen, die aelter als die Einstellung des Chats sind (Standard 47 Stunden), und das Protokoll sichern.
+    Die Grenze wird bei jedem Durchlauf neu gelesen, eine geaenderte Einstellung gilt deshalb sofort fuer alle gemerkten Nachrichten."""
     global msg_dirty
     jetzt = time.time()
-    grenze = AUTOCLEAR_HOURS * 3600
     faellig = {}
     with msg_lock:
         for cid, eintraege in list(msg_log.items()):
@@ -884,6 +1183,7 @@ def autoclear_step():
                 del msg_log[cid]
                 msg_dirty = True
                 continue
+            grenze = clear_hours(cid) * 3600
             alt = [mid for mid, ts in eintraege if jetzt - ts >= grenze]
             if alt:
                 faellig[cid] = alt
@@ -949,6 +1249,8 @@ def handle_message(m):
         text = MENU_BUTTONS[text]
     elif cid in awaiting and text:
         ask_cmd, seit = awaiting.pop(cid)
+        if ask_cmd in SETTING_INPUTS:
+            return handle_setting_input(cid, ask_cmd, text, time.time() - seit < ASK_TTL)
         if time.time() - seit < ASK_TTL:
             text = f"{ask_cmd} {text}"
     if not text.startswith("/"):
@@ -972,6 +1274,7 @@ def handle_message(m):
         "/help": lambda: cmd_help(cid),
         "/code": lambda: cmd_code(cid, arg, m.get("from")),
         "/mitglieder": lambda: cmd_mitglieder(cid),
+        "/einstellungen": lambda: cmd_einstellungen(cid),
         "/suche": lambda: cmd_suche(cid, arg),
         "/favoriten": lambda: cmd_favoriten(cid),
         "/jetzt": lambda: cmd_jetzt(cid),
@@ -1025,7 +1328,7 @@ def send_first_status(cid, w, event="status"):
     mins = (d["actual"] - datetime.now(timezone.utc)).total_seconds() / 60
     with lock:
         data["state"].setdefault(str(cid), {})["w_" + w["wid"]] = {
-            "nd": d["delay"], "cancelled": d["cancelled"], "rem": [t for t in REMIND_AT if mins <= t + REMIND_TOLERANCE], "eta": d["actual"].timestamp(),
+            "nd": d["delay"], "cancelled": d["cancelled"], "rem": [t for t in active_remind(get_chat(cid)) if mins <= t + REMIND_TOLERANCE], "eta": d["actual"].timestamp(),
             "t": d["planned"].timestamp()}
         save()
     send(cid, fmt_trip(event, d), reply_markup=detail_keyboard(w, cid))
@@ -1229,6 +1532,7 @@ def cleanup_shares():
             del data["shares"][c]
         old = [c for c, e in data["invites"].items() if e["exp"] < now]
         for c in old:
+            note_invite(data["invites"][c]["by"], "abgelaufen")
             del data["invites"][c]
         if gone or old:
             log(f"{len(gone) + len(old)} abgelaufene(r) Code(s) geloescht")
@@ -1273,22 +1577,58 @@ def show_shared(cid, code, w, mid=None):
         log("Aktualisieren ohne Aenderung:", e)
 
 
+def note_invite(by, status, wer=""):
+    """Verlauf der Einladungen ohne Codes, damit Besitzer und Verwalter den Status nachvollziehen koennen."""
+    h = data.setdefault("invite_hist", [])
+    h.append({"by": by, "status": status, "who": wer, "ts": int(time.time())})
+    del h[:-50]
+
+
+def make_invite(cid):
+    """Neuen Einladungscode erzeugen (Aufrufer haelt den Lock). Gibt (Code, Ablauf) zurueck oder wirft ValueError.
+    Eine Einladung macht nie zum Administrator, sie gibt nur den Mitglieder-Zugang."""
+    if not can_invite(cid):
+        raise ValueError("Keine Berechtigung.")
+    if not is_admin(cid):                                  # Einlader haben nur wenige offene Codes
+        offen = [c for c, i in data["invites"].items() if i["by"] == cid and i["exp"] > time.time()]
+        if len(offen) >= MAX_OPEN_INVITES:
+            raise ValueError(f"Du hast schon {MAX_OPEN_INVITES} offene Einladungscodes. Warte, bis sie eingelöst werden oder ablaufen.")
+    while True:
+        code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(8))
+        if code not in data["invites"] and code not in data["shares"]:
+            break
+    exp = time.time() + INVITE_TTL
+    data["invites"][code] = {"by": cid, "exp": exp}
+    save()
+    return code, exp
+
+
 def create_invite(cid):
     with lock:
-        if not is_admin(cid):                                  # Einlader haben nur wenige offene Codes
-            offen = [c for c, i in data["invites"].items() if i["by"] == cid and i["exp"] > time.time()]
-            if len(offen) >= MAX_OPEN_INVITES:
-                return send(cid, f"Du hast schon {MAX_OPEN_INVITES} offene Einladungscodes. Warte, bis sie eingelöst werden oder ablaufen.")
-        while True:
-            code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(8))
-            if code not in data["invites"] and code not in data["shares"]:
-                break
-        data["invites"][code] = {"by": cid, "exp": time.time() + INVITE_TTL}
-        save()
+        try:
+            code, _ = make_invite(cid)
+        except ValueError as e:
+            return send(cid, str(e))
     send(cid, "\U0001f511 Einladungscode (Vollzugriff)\n\n"
               "Schick diese Zeile der Person. Sie muss sie nur noch abschicken (Antippen kopiert sie):\n\n"
               f"<code>/code {code}</code>\n\n"
               "Der Code gilt 24 Stunden und nur für eine Person.", parse_mode="HTML")
+
+
+def revoke_invite(actor, code):
+    """Offenen Einladungscode widerrufen (Aufrufer haelt den Lock). Gibt (geklappt, Text) zurueck."""
+    if not is_admin(actor):
+        return False, "Keine Berechtigung"
+    inv = data["invites"].get(code)
+    if not inv or inv["exp"] <= time.time():
+        data["invites"].pop(code, None)
+        return False, "Nicht mehr offen"
+    if is_verwalter(inv["by"]) and not is_verwalter(actor):
+        return False, "Nicht möglich"                     # Einladungen des Verwalters kann nur er selbst widerrufen
+    del data["invites"][code]
+    note_invite(inv["by"], "widerrufen")
+    save()
+    return True, "Einladung widerrufen"
 
 
 def drop_invites(m):
@@ -1300,84 +1640,157 @@ def removable_members():
     return [m for m in data["members"] if not is_verwalter(m)]       # der Verwalter ist nie entfernbar
 
 
+def remove_member(actor, m):
+    """Zugang eines Mitglieds entfernen (Aufrufer haelt den Lock). Gibt (geklappt, Text) zurueck."""
+    if not is_admin(actor):
+        return False, "Keine Berechtigung"
+    if m is None or is_verwalter(m):
+        return False, "Nicht möglich"                     # der Verwalter kann nicht entfernt werden
+    if m not in data["members"]:
+        return False, "Nicht mehr vorhanden"
+    data["members"].remove(m)
+    if m in data["inviters"]:
+        data["inviters"].remove(m)
+    drop_invites(m)
+    data["chats"].pop(str(m), None)               # Tracking, Favoriten und Einstellungen der Person gehen mit
+    data["state"].pop(str(m), None)
+    data["names"].pop(str(m), None)
+    data["sessions"] = {t: s for t, s in data["sessions"].items() if s["cid"] != m}   # Website-Anmeldungen beenden
+    save()
+    return True, "Zugang entfernt"
+
+
+def set_inviter(actor, m, on=None):
+    """Einem Mitglied das Einladen erlauben oder nehmen (on=None schaltet um). Aufrufer haelt den Lock."""
+    if not is_admin(actor):
+        return False, "Keine Berechtigung"
+    if m is None or m not in data["members"] or is_verwalter(m):
+        return False, "Nicht möglich"
+    on = m not in data["inviters"] if on is None else bool(on)
+    if on and m not in data["inviters"]:
+        data["inviters"].append(m)
+    elif not on and m in data["inviters"]:
+        data["inviters"].remove(m)
+        drop_invites(m)
+    save()
+    return True, "Darf jetzt einladen" if on else "Einladen nicht mehr erlaubt"
+
+
+def parse_member(value):
+    return int(value) if isinstance(value, str) and value.lstrip("-").isdigit() else None
+
+
+def member_ref(m):
+    """Nicht umkehrbare Kennung fuer die Website, damit dort keine Chat-IDs auftauchen."""
+    return token_hash(f"{cfg['bot_token']}|{m}")[:12]
+
+
+def find_member(ref):
+    return next((m for m in data["members"] if secrets.compare_digest(member_ref(m), str(ref))), None)
+
+
+def open_invites():
+    return [(c, i) for c, i in data["invites"].items() if i["exp"] > time.time()]
+
+
 def members_keyboard():
-    return {"inline_keyboard": [[{"text": f"\U0001f5d1 {who(m)}"[:40], "callback_data": f"mrm:{m}"},
-                                 {"text": "✅ darf einladen" if m in data["inviters"] else "➕ einladen erlauben",
-                                  "callback_data": f"mi:{m}"}]
-                                for m in removable_members()]}
+    rows = [[{"text": "\U0001f511 Neue Einladung", "callback_data": "mn:0"},
+             {"text": "\U0001f4e8 Offene Einladungen", "callback_data": "mo:0"}]]
+    for m in removable_members():
+        rows.append([{"text": f"\U0001f464 {who(m)}"[:30], "callback_data": f"md:{m}"},
+                     {"text": "\U0001f5d1", "callback_data": f"mrm:{m}"},
+                     {"text": "✅ darf einladen" if m in data["inviters"] else "➕ einladen erlauben", "callback_data": f"mi:{m}"}])
+    return {"inline_keyboard": rows}
+
+
+def members_text():
+    lines = [f"• {who(m)}" + (" (darf einladen)" if m in data["inviters"] else "") for m in removable_members()]
+    if cfg["verwalter_id"]:
+        known = data["names"].get(str(cfg["verwalter_id"]))
+        lines.append(f"• {known} (Verwalter)" if known else "• Verwalter")
+    return ("Eingeladene Personen:\n" + "\n".join(lines) if lines else "Noch niemand eingeladen.") + \
+        "\n\nName antippen für Details, Mülleimer entfernt den Zugang, der dritte Knopf erlaubt der Person selbst Einladungen zu erzeugen."
 
 
 def cmd_mitglieder(cid):
     with lock:
         if not is_admin(cid):
             return
-        lines = [f"• {who(m)}" + (" (darf einladen)" if m in data["inviters"] else "") for m in removable_members()]
-        if cfg["verwalter_id"]:
-            known = data["names"].get(str(cfg["verwalter_id"]))
-            lines.append(f"• {known} (Verwalter)" if known else "• Verwalter")
-        if not lines:
-            return send(cid, "Noch niemand eingeladen. /code erzeugt einen Einladungscode.")
-        kb = members_keyboard() if removable_members() else None
-    send(cid, "Eingeladene Personen:\n" + "\n".join(lines) +
-         ("\n\nMit dem Mülleimer entfernst du den Zugang. Mit dem anderen Knopf darf die Person selbst Einladungscodes erzeugen." if kb else ""),
-         reply_markup=kb)
+        text, kb = members_text(), members_keyboard()
+    send(cid, text, reply_markup=kb)
 
 
-def handle_inviter_callback(cb, cid, mid, member):
-    """Besitzer und Verwalter erlauben einem Mitglied das Einladen oder nehmen es zurueck."""
-    with lock:
-        if not is_admin(cid):
-            return
-        m = int(member) if member.lstrip("-").isdigit() else None
-        if m is None or m not in data["members"] or is_verwalter(m):
-            answer = "Nicht möglich"
-        elif m in data["inviters"]:
-            data["inviters"].remove(m)
-            drop_invites(m)
-            save()
-            answer = "Einladen nicht mehr erlaubt"
-        else:
-            data["inviters"].append(m)
-            save()
-            answer = "Darf jetzt einladen"
-        kb = members_keyboard() if removable_members() else None
+def edit_or_log(cid, mid, text, kb=None):
     try:
-        tg("answerCallbackQuery", callback_query_id=cb["id"], text=answer)
-        if kb:
-            tg("editMessageReplyMarkup", chat_id=cid, message_id=mid, reply_markup=kb)
+        params = {"chat_id": cid, "message_id": mid, "text": text}
+        if kb is not None:
+            params["reply_markup"] = kb
+        tg("editMessageText", **params)
+    except Exception as e:
+        log("Nachricht nicht aktualisiert:", e)             # Telegram meldet einen Fehler, wenn der Text gleich bleibt
+
+
+def answer_cb(cb, text="", alert=False):
+    try:
+        tg("answerCallbackQuery", callback_query_id=cb["id"], text=text[:190], show_alert=alert)
     except Exception as e:
         log("Callback-Antwort fehlgeschlagen:", e)
 
 
-def handle_members_callback(cb, cid, mid, member):
+def stamp(ts):
+    return (datetime.fromtimestamp(ts, TZ) if TZ else datetime.fromtimestamp(ts)).strftime("%d.%m. %H:%M")
+
+
+def invites_view():
+    """Text und Knoepfe der offenen Einladungen samt Verlauf (Aufrufer haelt den Lock)."""
+    offen = open_invites()
+    zeilen = [f"• {c} · von {who(i['by'])} · bis {stamp(i['exp'])}" for c, i in offen]
+    verlauf = [f"• {h['status']}" + (f" ({h['who']})" if h.get("who") else "") + " · " + stamp(h["ts"])
+               for h in reversed(data.get("invite_hist", [])[-5:])]
+    text = "\U0001f4e8 Offene Einladungen\n" + ("\n".join(zeilen) if zeilen else "Keine offenen Einladungen.")
+    if verlauf:
+        text += "\n\nZuletzt:\n" + "\n".join(verlauf)
+    rows = [[{"text": f"\U0001f6ab {c} widerrufen", "callback_data": f"mx:{c}"}] for c, _ in offen[:10]]
+    rows.append([{"text": "⬅️ Zurück", "callback_data": "mm:0"}])
+    return text, {"inline_keyboard": rows}
+
+
+def member_details(m):
+    rolle = "Mitglied, darf einladen" if m in data["inviters"] else "Mitglied"
+    offen = len([1 for _, i in open_invites() if i["by"] == m])
+    return f"\U0001f464 {who(m)}\nRolle: {rolle}\nOffene Einladungen von dieser Person: {offen}"
+
+
+def handle_member_admin_callback(cb, cid, mid, action, rest):
+    """Mitgliederverwaltung per Knopf: md Details, mo offene Einladungen, mx widerrufen, mn neue Einladung, mm zurueck,
+    mrm entfernen, mi Einladen erlauben. Jede Aktion prueft erneut serverseitig, ob die Person Besitzer oder Verwalter ist."""
     with lock:
         if not is_admin(cid):
             return
-        m = int(member) if member.lstrip("-").isdigit() else None
-        if m is not None and is_verwalter(m):
-            answer = "Nicht möglich"                          # der Verwalter kann nicht entfernt werden
-        elif m in data["members"]:
-            data["members"].remove(m)
-            if m in data["inviters"]:
-                data["inviters"].remove(m)
-            drop_invites(m)
-            data["chats"].pop(str(m), None)               # Tracking und Favoriten der Person gehen mit
-            data["state"].pop(str(m), None)
-            data["names"].pop(str(m), None)
-            data["sessions"] = {t: s for t, s in data["sessions"].items() if s["cid"] != m}   # Website-Anmeldungen beenden
-            save()
-            answer = "Zugang entfernt"
+        answer, view, detail = "", "members", ""
+        if action == "mrm":
+            _, answer = remove_member(cid, parse_member(rest))
+        elif action == "mi":
+            _, answer = set_inviter(cid, parse_member(rest))
+        elif action == "mx":
+            _, answer = revoke_invite(cid, rest)
+            view = "invites"
+        elif action == "mo":
+            view = "invites"
+        elif action == "md":
+            m = parse_member(rest)
+            if m in data["members"] and not is_verwalter(m):
+                view, detail = "details", member_details(m)
+        if view == "invites":
+            text, kb = invites_view()
+        elif view == "details":
+            text, kb = detail, {"inline_keyboard": [[{"text": "⬅️ Zurück", "callback_data": "mm:0"}]]}
         else:
-            answer = "Nicht mehr vorhanden"
-        kb = members_keyboard() if removable_members() else None
-    try:
-        tg("answerCallbackQuery", callback_query_id=cb["id"], text=answer)
-        if kb:
-            tg("editMessageReplyMarkup", chat_id=cid, message_id=mid, reply_markup=kb)
-        else:
-            tg("editMessageText", chat_id=cid, message_id=mid, text="Keine eingeladenen Personen mehr.")
-    except Exception as e:
-        log("Callback-Antwort fehlgeschlagen:", e)
+            text, kb = members_text(), members_keyboard()
+    answer_cb(cb, answer)
+    if action == "mn":
+        return create_invite(cid)
+    edit_or_log(cid, mid, text, kb)
 
 
 def cmd_code(cid, arg, user=None):
@@ -1394,16 +1807,17 @@ def cmd_code(cid, arg, user=None):
     invited = None
     with lock:
         inv = data["invites"].get(code)
-        if inv and not is_full(cid):
+        if inv and inv["exp"] > now and not is_full(cid):
             del data["invites"][code]                     # Einladung ist nur einmal nutzbar
             if cid in data["guests"]:
                 data["guests"].remove(cid)
             data["members"].append(cid)
             data["names"][str(cid)] = display_name(user)
             get_chat(cid)
-            save()
             invited = inv["by"]
             name = who(cid)
+            note_invite(invited, "eingelöst", name)
+            save()
     if invited is not None:
         send(cid, "✅ Einladung eingelöst. Du kannst den Bot jetzt voll nutzen.\n\n" + HELP, reply_markup=menu_keyboard(cid))
         if is_admin(invited):
@@ -1488,10 +1902,10 @@ def handle_callback(cb):
         return handle_routine_callback(cb, cid, mid, action, sid)
     if action in SHARE_ACTIONS:
         return handle_share_callback(cb, cid, mid, action, sid)
-    if action == "mrm":
-        return handle_members_callback(cb, cid, mid, sid)
-    if action == "mi":
-        return handle_inviter_callback(cb, cid, mid, sid)
+    if action in ADMIN_ACTIONS:
+        return handle_member_admin_callback(cb, cid, mid, action, sid)
+    if action == "st":
+        return handle_settings_callback(cb, cid, mid, sid)
     if action == "ac":
         return handle_autoclear_callback(cb, cid, mid, sid)
     if action == "wl":
@@ -1790,6 +2204,61 @@ def web_trips(cid, chat):
     return {"trips": sorted(trips, key=lambda t: t["planned"]), "routines": routines}
 
 
+def web_name(m):
+    """Anzeigename fuer die Website: nie eine Chat-ID."""
+    return data["names"].get(str(m)) or ("Verwalter" if is_verwalter(m) else "Ohne Namen")
+
+
+def web_members(viewer):
+    """Mitglieder, Einladungen und Verlauf fuer die Website (nur Besitzer und Verwalter, Aufrufer haelt den Lock).
+    Es gehen keine Chat-IDs raus, nur eine nicht umkehrbare Kennung."""
+    rows, seen = [], set()
+
+    def add(m, rolle, aenderbar):
+        if m and m not in seen:
+            seen.add(m)
+            rows.append({"ref": member_ref(m), "name": web_name(m), "role": "Verwalter" if is_verwalter(m) else rolle,
+                         "inviter": m in data["inviters"], "removable": aenderbar})
+    add(data["owner"], "Besitzer", False)
+    add(cfg["verwalter_id"], "Verwalter", False)
+    for m in data["members"]:
+        add(m, "Mitglied", not is_verwalter(m))
+    return {"members": rows,
+            "invites": [{"code": c, "by": web_name(i["by"]), "expires": int(i["exp"]), "status": "offen"} for c, i in open_invites()],
+            "history": [{"by": web_name(h["by"]), "status": h["status"], "who": h.get("who", ""), "ts": h["ts"]}
+                        for h in reversed(data.get("invite_hist", []))][:20]}
+
+
+def web_members_route(method, path, q, body, cid):
+    with lock:
+        if not is_admin(cid):                                   # bei jeder Aktion erneut serverseitig pruefen
+            return 403, {"error": "keine Berechtigung"}
+        msg = ""
+        if method == "GET" and path == "/members":
+            pass
+        elif method == "POST" and path == "/members/invite":
+            try:
+                make_invite(cid)
+            except ValueError as e:
+                return 400, {"error": str(e)}
+            msg = "Einladung erstellt"
+        elif method == "DELETE" and path == "/members/invite":
+            ok, msg = revoke_invite(cid, q.get("code", [""])[0].upper())
+            if not ok:
+                return 400, {"error": msg}
+        elif method == "DELETE" and path == "/members":
+            ok, msg = remove_member(cid, find_member(q.get("ref", [""])[0]))
+            if not ok:
+                return 400, {"error": msg}
+        elif method == "POST" and path == "/members/inviter":
+            ok, msg = set_inviter(cid, find_member(clean_str(body.get("ref"), 40)), body.get("on") is True)
+            if not ok:
+                return 400, {"error": msg}
+        else:
+            return 404, {"error": "unbekannt"}
+        return 200, {**web_members(cid), "message": msg}
+
+
 def web_route(method, path, q, body, auth, meta=None):
     web_cleanup()
     if method == "POST" and path == "/login/start":
@@ -1807,6 +2276,18 @@ def web_route(method, path, q, body, auth, meta=None):
     if method == "GET" and path == "/me":
         with lock:
             return 200, {"name": who(cid)}
+    if path == "/settings" and method in ("GET", "POST"):
+        # Immer die eigenen Einstellungen der angemeldeten Person (cid kommt aus der Sitzung, nie aus der Anfrage)
+        if method == "POST":
+            erlaubt = ("nick", "autoclear_on", "autoclear_hours", "remind_first", "remind_second")
+            try:
+                apply_settings(cid, {k: body[k] for k in erlaubt if k in body})
+            except ValueError as e:
+                return 400, {"error": str(e)}
+        with lock:
+            return 200, {**settings_view(cid), "admin": is_admin(cid)}
+    if path.startswith("/members"):
+        return web_members_route(method, path, q, body, cid)
     if path.startswith("/favs"):
         with lock:
             chat = get_chat(cid)
@@ -2011,6 +2492,7 @@ def main():
     if cfg["owner_id"]:
         data["owner"] = cfg["owner_id"]                          # Besitzer fest vorgegeben, niemand kann ihn per /start uebernehmen
         get_chat(cfg["owner_id"])
+    migrate()
     save()
     log("Verwalter gesetzt: " + ("ja" if cfg["verwalter_id"] else "nein"))     # nie die ID ausgeben
     if data["owner"] is None:
@@ -2027,7 +2509,8 @@ def main():
         {"command": "pause", "description": "Benachrichtigungen aus"},
         {"command": "weiter", "description": "Benachrichtigungen an"},
         {"command": "clear", "description": "Chatverlauf löschen"},
-        {"command": "autoclear", "description": "Nachrichten nach 47 Stunden löschen"},
+        {"command": "autoclear", "description": "Nachrichten automatisch löschen"},
+        {"command": "einstellungen", "description": "Name, Löschen, Erinnerungen"},
         {"command": "menue", "description": "Tasten-Menü anzeigen"},
         {"command": "status", "description": "Einstellungen"},
     ])

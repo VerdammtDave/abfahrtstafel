@@ -145,23 +145,23 @@ def test_nicht_entfernbar():
     bot.save = lambda: None
     karte = {"id": "x", "message": {"chat": {"id": BESITZER}, "message_id": 1}}
     for wer in (BESITZER, VERWALTER):
-        bot.handle_members_callback(karte, wer, 1, str(VERWALTER))
+        bot.handle_member_admin_callback(karte, wer, 1, "mrm", str(VERWALTER))
         pruefe(VERWALTER in bot.data["members"], f"Verwalter wurde von {wer} entfernt")
         pruefe(str(VERWALTER) in bot.data["chats"], "Daten des Verwalters wurden geloescht")
-    bot.handle_members_callback(karte, MITGLIED, 1, str(VERWALTER))
+    bot.handle_member_admin_callback(karte, MITGLIED, 1, "mrm", str(VERWALTER))
     pruefe(VERWALTER in bot.data["members"], "Mitglied konnte den Verwalter entfernen")
     pruefe(bot.is_full(VERWALTER), "Verwalter hat nach Entfernversuchen keinen Zugriff mehr")
     tasten = [k["callback_data"] for z in bot.members_keyboard()["inline_keyboard"] for k in z]
     pruefe(f"mrm:{VERWALTER}" not in tasten, "in /mitglieder gibt es einen Entfernen-Knopf fuer den Verwalter")
     # Mitglieder koennen nicht von Mitgliedern entfernt werden, aber vom Besitzer schon
-    bot.handle_members_callback(karte, MITGLIED, 1, str(MITGLIED))
+    bot.handle_member_admin_callback(karte, MITGLIED, 1, "mrm", str(MITGLIED))
     pruefe(MITGLIED in bot.data["members"], "Mitglied konnte sich oder andere ohne Rechte entfernen")
-    bot.handle_members_callback(karte, BESITZER, 1, str(MITGLIED))
+    bot.handle_member_admin_callback(karte, BESITZER, 1, "mrm", str(MITGLIED))
     pruefe(MITGLIED not in bot.data["members"], "Besitzer kann Mitglieder nicht mehr entfernen")
     # Sitzungen des Verwalters bleiben, wenn andere entfernt werden
     neu()
     bot.data["sessions"] = {"a" * 64: {"cid": VERWALTER, "exp": 9e12}, "b" * 64: {"cid": MITGLIED, "exp": 9e12}}
-    bot.handle_members_callback(karte, BESITZER, 1, str(MITGLIED))
+    bot.handle_member_admin_callback(karte, BESITZER, 1, "mrm", str(MITGLIED))
     pruefe(("a" * 64) in bot.data["sessions"], "Sitzung des Verwalters wurde beendet")
     pruefe(("b" * 64) not in bot.data["sessions"], "Sitzung des entfernten Mitglieds blieb bestehen")
 
@@ -242,9 +242,9 @@ def test_einlader():
     pruefe(not bot.data["invites"], "Mitglied ohne Erlaubnis hat einen Einladungscode erzeugt")
     # Erlauben: nur Besitzer und Verwalter
     for wer in (MITGLIED, GAST, FREMD):
-        bot.handle_inviter_callback(karte, wer, 1, str(MITGLIED))
+        bot.handle_member_admin_callback(karte, wer, 1, "mi", str(MITGLIED))
     pruefe(MITGLIED not in bot.data["inviters"], "ohne Berechtigung konnte jemand das Einladen erlauben")
-    bot.handle_inviter_callback(karte, BESITZER, 1, str(MITGLIED))
+    bot.handle_member_admin_callback(karte, BESITZER, 1, "mi", str(MITGLIED))
     pruefe(MITGLIED in bot.data["inviters"] and bot.can_invite(MITGLIED), "Besitzer konnte das Einladen nicht erlauben")
     bot.cmd_code(MITGLIED, "")
     pruefe(len(bot.data["invites"]) == 1 and all(i["by"] == MITGLIED for i in bot.data["invites"].values()), "Einlader erzeugt keinen Code")
@@ -263,17 +263,17 @@ def test_einlader():
     pruefe(any(c == BESITZER and "eingeladen" in t for c, t in nachrichten), "Besitzer erfaehrt nicht, wer ueber einen Einlader kam")
     pruefe(not any(str(VERWALTER) in t for _, t in nachrichten), "die Verwalter-ID steht in einer Nachricht")
     # Verwalter und Nicht-Mitglieder koennen nicht zu Einladern gemacht werden
-    bot.handle_inviter_callback(karte, BESITZER, 1, str(VERWALTER))
-    bot.handle_inviter_callback(karte, BESITZER, 1, str(GAST))
+    bot.handle_member_admin_callback(karte, BESITZER, 1, "mi", str(VERWALTER))
+    bot.handle_member_admin_callback(karte, BESITZER, 1, "mi", str(GAST))
     pruefe(VERWALTER not in bot.data["inviters"] and GAST not in bot.data["inviters"], "Verwalter oder Nicht-Mitglied wurde Einlader")
     # Entziehen loescht die offenen Codes
-    bot.handle_inviter_callback(karte, VERWALTER, 1, str(MITGLIED))
+    bot.handle_member_admin_callback(karte, VERWALTER, 1, "mi", str(MITGLIED))
     pruefe(MITGLIED not in bot.data["inviters"] and not bot.can_invite(MITGLIED), "Entziehen hat nicht funktioniert")
     pruefe(not any(i["by"] == MITGLIED for i in bot.data["invites"].values()), "offene Codes blieben nach dem Entziehen gueltig")
     # Entfernen loescht die Berechtigung
-    bot.handle_inviter_callback(karte, BESITZER, 1, str(MITGLIED))
+    bot.handle_member_admin_callback(karte, BESITZER, 1, "mi", str(MITGLIED))
     bot.cmd_code(MITGLIED, "")
-    bot.handle_members_callback(karte, BESITZER, 1, str(MITGLIED))
+    bot.handle_member_admin_callback(karte, BESITZER, 1, "mrm", str(MITGLIED))
     pruefe(MITGLIED not in bot.data["inviters"] and not any(i["by"] == MITGLIED for i in bot.data["invites"].values()), "Entfernen laesst Einlader-Rechte oder Codes zurueck")
     pruefe(not bot.can_invite(MITGLIED), "entferntes Mitglied darf noch einladen")
     pruefe("inviters" in bot.data and "verwalter" not in str(bot.data).lower(), "Rolle des Verwalters steht in data")
