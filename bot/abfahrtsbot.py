@@ -3,7 +3,7 @@
 
 Daten: Transitous (MOTIS), gleiche Quelle wie die Abfahrtstafel. Nur Standardbibliothek.
 Start:   python3 abfahrtsbot.py
-Test:    python3 abfahrtsbot.py --selftest "Bocholt"
+Test:    python3 abfahrtsbot.py --selftest "Berlin Hauptbahnhof"
 """
 import copy
 import hashlib
@@ -35,7 +35,7 @@ MODES = ["all", "bus", "bahn", "off"]
 MODE_ICON = {"all": "\U0001f68c\U0001f686", "bus": "\U0001f68c", "bahn": "\U0001f686", "off": "\U0001f515"}
 
 cfg = {}
-data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "inviters": [], "msglog": {}, "invites": {}, "names": {}, "sessions": {}}
+data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "admins": [], "invited_by": {}, "msglog": {}, "invites": {}, "names": {}, "sessions": {}}
 lock = threading.Lock()
 last_check = None
 
@@ -570,6 +570,10 @@ def migrate():
     """Beim Start ausfuehren, wiederholbar. Alte Daten bleiben unveraendert: Fehlt eine persoenliche Einstellung, gilt der
     bisherige Standard (47 Stunden, Erinnerungen 15 und 5 Minuten, kein Name). Ungueltige gespeicherte Werte werden entfernt."""
     data.setdefault("invite_hist", [])
+    data.pop("inviters", None)                   # frueheres Einladerecht: gibt es nicht mehr, die Rollen sind Admin und Mitglied
+    data.setdefault("admins", [])
+    data.setdefault("invited_by", {})
+    data["admins"] = [m for m in data["admins"] if m in data["members"] and not is_verwalter(m) and m != data["owner"]]
     for chat in data["chats"].values():
         if chat.get("autoclear_h") is not None and chat["autoclear_h"] != clear_hours_value(chat):
             del chat["autoclear_h"]
@@ -629,7 +633,7 @@ FAV_TEXT = ("Deine Favoriten \u2013 Haltestelle antippen f\u00fcr die n\u00e4chs
 
 def cmd_suche(cid, arg):
     if not arg:
-        return send(cid, "Nutzung: /suche Bocholt Bahnhof")
+        return send(cid, "Nutzung: /suche Berlin Hauptbahnhof")
     try:
         results = search_stops(arg)
     except Exception as e:
@@ -730,7 +734,7 @@ def cmd_abfahrten(cid, arg):
         with lock:
             favs = copy.deepcopy(get_chat(cid)["favs"])
         if not favs:
-            return send(cid, "Wie heißt die Haltestelle? Schreib den Namen, zum Beispiel: Bocholt Bahnhof")
+            return send(cid, "Wie heißt die Haltestelle? Schreib den Namen, zum Beispiel: Berlin Hauptbahnhof")
         kb = [[{"text": f["name"], "callback_data": "dep:" + f["sid"]}] for f in favs]
         return send(cid, "Von welcher Haltestelle? Tippe einen Favoriten an oder schreib den Namen.",
                     reply_markup={"inline_keyboard": kb})
@@ -847,8 +851,8 @@ GUEST_HELP = (
 )
 
 
-ADMIN_ACTIONS = {"mrm", "mi", "md", "mo", "mx", "mn", "mm"}                             # Mitglieder entfernen, Einladen erlauben: nur Besitzer und Verwalter
-MAX_OPEN_INVITES = 5                                      # offene Einladungscodes pro Einlader
+ADMIN_ACTIONS = {"mrm", "mr", "md", "mo", "mx", "mn", "mm"}                             # Mitgliederverwaltung: Besitzer, Verwalter und Admins (Rollen vergeben nur Besitzer und Verwalter)
+MAX_OPEN_INVITES = 5                                      # offene Einladungscodes pro Admin
 OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung nur fuer den Besitzer (und den Verwalter)
 VERWALTER_COMMANDS = set()                                # Befehle rund um Server und Betrieb: NUR der Verwalter. Aktuell gibt es keine.
 INVITE_TTL = 24 * 3600                                    # Einladungscode gilt 24 h
@@ -856,6 +860,12 @@ INVITE_TTL = 24 * 3600                                    # Einladungscode gilt 
 
 def is_owner(cid):
     return data["owner"] == cid
+
+
+def ist_besitzer(cid):
+    """Nur fuer Schutz und Anzeige (den Besitzer kann niemand entfernen oder zum Admin machen, Rollenname).
+    Berechtigungen immer ueber is_admin, is_manager oder may_use pruefen, damit der Verwalter eingeschlossen ist."""
+    return is_owner(cid)
 
 
 # REGELN FUER SPAETERE AENDERUNGEN (siehe auch CLAUDE.md und bot/README.md)
@@ -880,9 +890,14 @@ def is_admin(cid):
     return is_owner(cid) or is_verwalter(cid)
 
 
+def is_manager(cid):
+    """Besitzer, Verwalter oder Admin: darf einladen, Einladungen widerrufen und Mitglieder entfernen.
+    Rollen vergeben dürfen nur Besitzer und Verwalter (is_admin). Es gibt genau einen Besitzer (data["owner"])."""
+    return is_admin(cid) or (cid in data["admins"] and cid in data["members"])
+
+
 def can_invite(cid):
-    """Besitzer, Verwalter und Mitglieder, denen das Einladen erlaubt wurde (Einlader)."""
-    return is_admin(cid) or (cid in data["members"] and cid in data["inviters"])
+    return is_manager(cid)
 
 
 def display_name(user):
@@ -910,7 +925,7 @@ def may_use(cid, cmd=None, action=None):
     Verwaltung. Gaeste (Code einer geteilten Verbindung) nur Verbindungen ansehen und verfolgen."""
     if is_verwalter(cid):
         return True
-    if is_owner(cid):
+    if is_owner(cid) or (cid in data["admins"] and cid in data["members"]):
         return cmd not in VERWALTER_COMMANDS if cmd else True
     if cid in data["members"]:
         return cmd not in OWNER_COMMANDS | VERWALTER_COMMANDS if cmd else action not in ADMIN_ACTIONS
@@ -928,7 +943,7 @@ MENU_BUTTONS = {
 }
 # Tasten, nach denen der Bot erst noch einen Text braucht (Name der Haltestelle, Code)
 MENU_ASK = {
-    "🔍 Suche": ("/suche", "Wie heißt die Haltestelle? Schreib den Namen, zum Beispiel: Bocholt Bahnhof"),
+    "🔍 Suche": ("/suche", "Wie heißt die Haltestelle? Schreib den Namen, zum Beispiel: Berlin Hauptbahnhof"),
     "🎟 Code eingeben": ("/code", "Schick mir jetzt den Code, zum Beispiel: ABC234"),
 }
 ASK_TTL = 300                      # so lange wartet der Bot auf die Antwort nach einer Taste
@@ -941,7 +956,7 @@ def menu_keyboard(cid):
         rows = [["⭐ Favoriten", "🔍 Suche"], ["🚏 Abfahrten", "⏱ Verspätungen"],
                 ["📌 Verfolgte Fahrten", "🔁 Wiederkehrend"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
                 ["⚙️ Status", "🛠 Einstellungen"], ["🕒 Auto-Löschen", "🧹 Chat löschen"], ["🎟 Code eingeben"]]
-        extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_admin(cid) else [])
+        extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_manager(cid) else [])
         if extra:
             rows.append(extra)
         rows.append(["❓ Hilfe", "🙈 Ausblenden"])
@@ -962,7 +977,7 @@ def cmd_menue_aus(cid):
 
 
 def cmd_help(cid):
-    send(cid, HELP if is_admin(cid) else GUEST_HELP, reply_markup=menu_keyboard(cid))
+    send(cid, HELP if is_manager(cid) else GUEST_HELP, reply_markup=menu_keyboard(cid))
 
 
 CLEAR_BATCH = 100                  # deleteMessages nimmt höchstens 100 Nachrichten auf einmal
@@ -1589,7 +1604,7 @@ def make_invite(cid):
     Eine Einladung macht nie zum Administrator, sie gibt nur den Mitglieder-Zugang."""
     if not can_invite(cid):
         raise ValueError("Keine Berechtigung.")
-    if not is_admin(cid):                                  # Einlader haben nur wenige offene Codes
+    if not is_admin(cid):                                  # Admins haben nur wenige offene Codes
         offen = [c for c, i in data["invites"].items() if i["by"] == cid and i["exp"] > time.time()]
         if len(offen) >= MAX_OPEN_INVITES:
             raise ValueError(f"Du hast schon {MAX_OPEN_INVITES} offene Einladungscodes. Warte, bis sie eingelöst werden oder ablaufen.")
@@ -1617,14 +1632,14 @@ def create_invite(cid):
 
 def revoke_invite(actor, code):
     """Offenen Einladungscode widerrufen (Aufrufer haelt den Lock). Gibt (geklappt, Text) zurueck."""
-    if not is_admin(actor):
+    if not is_manager(actor):
         return False, "Keine Berechtigung"
     inv = data["invites"].get(code)
     if not inv or inv["exp"] <= time.time():
         data["invites"].pop(code, None)
         return False, "Nicht mehr offen"
-    if is_verwalter(inv["by"]) and not is_verwalter(actor):
-        return False, "Nicht möglich"                     # Einladungen des Verwalters kann nur er selbst widerrufen
+    if (is_verwalter(inv["by"]) and not is_verwalter(actor)) or (is_admin(inv["by"]) and not is_admin(actor)):
+        return False, "Nicht möglich"                     # Einladungen des Verwalters kann nur er selbst widerrufen, die von Besitzer und Verwalter nur sie
     del data["invites"][code]
     note_invite(inv["by"], "widerrufen")
     save()
@@ -1641,16 +1656,18 @@ def removable_members():
 
 
 def remove_member(actor, m):
-    """Zugang eines Mitglieds entfernen (Aufrufer haelt den Lock). Gibt (geklappt, Text) zurueck."""
-    if not is_admin(actor):
+    """Zugang eines Mitglieds entfernen (Aufrufer haelt den Lock). Gibt (geklappt, Text) zurueck.
+    Besitzer, Verwalter und Admins duerfen das, den Besitzer und den Verwalter kann niemand entfernen."""
+    if not is_manager(actor):
         return False, "Keine Berechtigung"
-    if m is None or is_verwalter(m):
-        return False, "Nicht möglich"                     # der Verwalter kann nicht entfernt werden
+    if m is None or is_verwalter(m) or ist_besitzer(m):
+        return False, "Nicht möglich"                     # der Verwalter und der Besitzer koennen nicht entfernt werden
     if m not in data["members"]:
         return False, "Nicht mehr vorhanden"
     data["members"].remove(m)
-    if m in data["inviters"]:
-        data["inviters"].remove(m)
+    if m in data["admins"]:
+        data["admins"].remove(m)
+    data.setdefault("invited_by", {}).pop(str(m), None)
     drop_invites(m)
     data["chats"].pop(str(m), None)               # Tracking, Favoriten und Einstellungen der Person gehen mit
     data["state"].pop(str(m), None)
@@ -1660,20 +1677,29 @@ def remove_member(actor, m):
     return True, "Zugang entfernt"
 
 
-def set_inviter(actor, m, on=None):
-    """Einem Mitglied das Einladen erlauben oder nehmen (on=None schaltet um). Aufrufer haelt den Lock."""
+def set_role(actor, m, role):
+    """Rolle eines Mitglieds setzen: "admin" oder "mitglied" (Aufrufer haelt den Lock). Nur Besitzer und Verwalter.
+    Eine zweite Besitzer-Rolle gibt es nicht, und der Verwalter wird nie ueber den Bot veraendert."""
     if not is_admin(actor):
         return False, "Keine Berechtigung"
-    if m is None or m not in data["members"] or is_verwalter(m):
+    if m is None or m not in data["members"] or is_verwalter(m) or ist_besitzer(m) or role not in ("admin", "mitglied"):
         return False, "Nicht möglich"
-    on = m not in data["inviters"] if on is None else bool(on)
-    if on and m not in data["inviters"]:
-        data["inviters"].append(m)
-    elif not on and m in data["inviters"]:
-        data["inviters"].remove(m)
+    if role == "admin" and m not in data["admins"]:
+        data["admins"].append(m)
+    elif role == "mitglied" and m in data["admins"]:
+        data["admins"].remove(m)
         drop_invites(m)
     save()
-    return True, "Darf jetzt einladen" if on else "Einladen nicht mehr erlaubt"
+    return True, "Ist jetzt Admin" if role == "admin" else "Ist jetzt Mitglied"
+
+
+def rolle_von(m):
+    return "Besitzer" if ist_besitzer(m) else "Verwalter" if is_verwalter(m) else "Admin" if m in data["admins"] else "Mitglied"
+
+
+def eingeladen_von(m, namen=who):
+    by = data.get("invited_by", {}).get(str(m))
+    return namen(by) if by else ""
 
 
 def parse_member(value):
@@ -1693,30 +1719,35 @@ def open_invites():
     return [(c, i) for c, i in data["invites"].items() if i["exp"] > time.time()]
 
 
-def members_keyboard():
+def members_keyboard(viewer=None):
+    """Knoepfe der Mitgliederverwaltung. Rollen aendern sieht nur, wer sie vergeben darf (Besitzer, Verwalter)."""
+    rollen = viewer is None or is_admin(viewer)
     rows = [[{"text": "\U0001f511 Neue Einladung", "callback_data": "mn:0"},
              {"text": "\U0001f4e8 Offene Einladungen", "callback_data": "mo:0"}]]
     for m in removable_members():
-        rows.append([{"text": f"\U0001f464 {who(m)}"[:30], "callback_data": f"md:{m}"},
-                     {"text": "\U0001f5d1", "callback_data": f"mrm:{m}"},
-                     {"text": "✅ darf einladen" if m in data["inviters"] else "➕ einladen erlauben", "callback_data": f"mi:{m}"}])
+        zeile = [{"text": f"\U0001f464 {who(m)}"[:26], "callback_data": f"md:{m}"}]
+        if rollen:
+            zeile.append({"text": "⬇️ Mitglied" if m in data["admins"] else "⬆️ Admin", "callback_data": f"mr:{m}:" + ("m" if m in data["admins"] else "a")})
+        zeile.append({"text": "\U0001f528", "callback_data": f"mrm:{m}"})
+        rows.append(zeile)
     return {"inline_keyboard": rows}
 
 
 def members_text():
-    lines = [f"• {who(m)}" + (" (darf einladen)" if m in data["inviters"] else "") for m in removable_members()]
+    lines = [f"• {who(m)}" + (" (Admin)" if m in data["admins"] else "") + (f" · eingeladen von {eingeladen_von(m)}" if eingeladen_von(m) else "")
+             for m in removable_members()]
     if cfg["verwalter_id"]:
         known = data["names"].get(str(cfg["verwalter_id"]))
         lines.append(f"• {known} (Verwalter)" if known else "• Verwalter")
     return ("Eingeladene Personen:\n" + "\n".join(lines) if lines else "Noch niemand eingeladen.") + \
-        "\n\nName antippen für Details, Mülleimer entfernt den Zugang, der dritte Knopf erlaubt der Person selbst Einladungen zu erzeugen."
+        "\n\nName antippen für Details, \U0001f528 wirft die Person raus (der Zugang und ihre Daten gehen weg), ⬆️ und ⬇️ ändern die Rolle (nur Besitzer und Verwalter)."
 
 
 def cmd_mitglieder(cid):
     with lock:
-        if not is_admin(cid):
+        if not is_manager(cid):
             return
-        text, kb = members_text(), members_keyboard()
+        text, kb = members_text(), members_keyboard(cid)
     send(cid, text, reply_markup=kb)
 
 
@@ -1756,22 +1787,23 @@ def invites_view():
 
 
 def member_details(m):
-    rolle = "Mitglied, darf einladen" if m in data["inviters"] else "Mitglied"
     offen = len([1 for _, i in open_invites() if i["by"] == m])
-    return f"\U0001f464 {who(m)}\nRolle: {rolle}\nOffene Einladungen von dieser Person: {offen}"
+    von = eingeladen_von(m) or "unbekannt"
+    return f"\U0001f464 {who(m)}\nRolle: {rolle_von(m)}\nEingeladen von: {von}\nOffene Einladungen von dieser Person: {offen}"
 
 
 def handle_member_admin_callback(cb, cid, mid, action, rest):
     """Mitgliederverwaltung per Knopf: md Details, mo offene Einladungen, mx widerrufen, mn neue Einladung, mm zurueck,
-    mrm entfernen, mi Einladen erlauben. Jede Aktion prueft erneut serverseitig, ob die Person Besitzer oder Verwalter ist."""
+    mrm rauswerfen, mr Rolle setzen (nur Besitzer und Verwalter). Jede Aktion prueft erneut serverseitig die Berechtigung."""
     with lock:
-        if not is_admin(cid):
+        if not is_manager(cid):
             return
         answer, view, detail = "", "members", ""
         if action == "mrm":
             _, answer = remove_member(cid, parse_member(rest))
-        elif action == "mi":
-            _, answer = set_inviter(cid, parse_member(rest))
+        elif action == "mr":
+            wer, _, rolle = rest.partition(":")
+            _, answer = set_role(cid, parse_member(wer), {"a": "admin", "m": "mitglied"}.get(rolle))
         elif action == "mx":
             _, answer = revoke_invite(cid, rest)
             view = "invites"
@@ -1786,7 +1818,7 @@ def handle_member_admin_callback(cb, cid, mid, action, rest):
         elif view == "details":
             text, kb = detail, {"inline_keyboard": [[{"text": "⬅️ Zurück", "callback_data": "mm:0"}]]}
         else:
-            text, kb = members_text(), members_keyboard()
+            text, kb = members_text(), members_keyboard(cid)
     answer_cb(cb, answer)
     if action == "mn":
         return create_invite(cid)
@@ -1816,6 +1848,7 @@ def cmd_code(cid, arg, user=None):
             get_chat(cid)
             invited = inv["by"]
             name = who(cid)
+            data.setdefault("invited_by", {})[str(cid)] = invited
             note_invite(invited, "eingelöst", name)
             save()
     if invited is not None:
@@ -2210,19 +2243,20 @@ def web_name(m):
 
 
 def web_members(viewer):
-    """Mitglieder, Einladungen und Verlauf fuer die Website (nur Besitzer und Verwalter, Aufrufer haelt den Lock).
-    Es gehen keine Chat-IDs raus, nur eine nicht umkehrbare Kennung."""
+    """Mitglieder, Einladungen und Verlauf fuer die Website (Besitzer, Verwalter und Admins, Aufrufer haelt den Lock).
+    Es gehen keine Chat-IDs raus, nur eine nicht umkehrbare Kennung. can_role: der Betrachter darf die Rolle aendern."""
     rows, seen = [], set()
 
-    def add(m, rolle, aenderbar):
+    def add(m, aenderbar):
         if m and m not in seen:
             seen.add(m)
-            rows.append({"ref": member_ref(m), "name": web_name(m), "role": "Verwalter" if is_verwalter(m) else rolle,
-                         "inviter": m in data["inviters"], "removable": aenderbar})
-    add(data["owner"], "Besitzer", False)
-    add(cfg["verwalter_id"], "Verwalter", False)
+            von = data.get("invited_by", {}).get(str(m))
+            rows.append({"ref": member_ref(m), "name": web_name(m), "role": rolle_von(m), "invited_by": web_name(von) if von else "",
+                         "removable": aenderbar, "can_role": aenderbar and is_admin(viewer)})
+    add(data["owner"], False)
+    add(cfg["verwalter_id"], False)
     for m in data["members"]:
-        add(m, "Mitglied", not is_verwalter(m))
+        add(m, not is_verwalter(m) and not ist_besitzer(m))
     return {"members": rows,
             "invites": [{"code": c, "by": web_name(i["by"]), "expires": int(i["exp"]), "status": "offen"} for c, i in open_invites()],
             "history": [{"by": web_name(h["by"]), "status": h["status"], "who": h.get("who", ""), "ts": h["ts"]}
@@ -2231,7 +2265,7 @@ def web_members(viewer):
 
 def web_members_route(method, path, q, body, cid):
     with lock:
-        if not is_admin(cid):                                   # bei jeder Aktion erneut serverseitig pruefen
+        if not is_manager(cid):                                 # bei jeder Aktion erneut serverseitig pruefen
             return 403, {"error": "keine Berechtigung"}
         msg = ""
         if method == "GET" and path == "/members":
@@ -2250,8 +2284,8 @@ def web_members_route(method, path, q, body, cid):
             ok, msg = remove_member(cid, find_member(q.get("ref", [""])[0]))
             if not ok:
                 return 400, {"error": msg}
-        elif method == "POST" and path == "/members/inviter":
-            ok, msg = set_inviter(cid, find_member(clean_str(body.get("ref"), 40)), body.get("on") is True)
+        elif method == "POST" and path == "/members/role":
+            ok, msg = set_role(cid, find_member(clean_str(body.get("ref"), 40)), body.get("role"))
             if not ok:
                 return 400, {"error": msg}
         else:
@@ -2285,7 +2319,7 @@ def web_route(method, path, q, body, auth, meta=None):
             except ValueError as e:
                 return 400, {"error": str(e)}
         with lock:
-            return 200, {**settings_view(cid), "admin": is_admin(cid)}
+            return 200, {**settings_view(cid), "admin": is_manager(cid)}
     if path.startswith("/members"):
         return web_members_route(method, path, q, body, cid)
     if path.startswith("/favs"):

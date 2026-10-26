@@ -26,7 +26,7 @@ dem Code, die nächste Nachricht ist die Antwort (wartet 5 Minuten). Ein Befehl 
 
 | Befehl | Wirkung |
 |---|---|
-| `/suche Bocholt Bahnhof` | Haltestelle suchen, per Tippen als Favorit speichern |
+| `/suche Berlin Hauptbahnhof` | Haltestelle suchen, per Tippen als Favorit speichern |
 | `/favoriten` | Liste deiner Haltestellen, antippen zeigt die nächsten 10 Abfahrten |
 | `/abfahrten [Name]` | nächste 10 Abfahrten einer Favoriten- oder beliebigen Haltestelle |
 | `/tracking` | verfolgte Fahrten, antippen zeigt den Stand und erlaubt „Tracking beenden“ |
@@ -128,7 +128,7 @@ Weitere Einstellungen in `config.json` bzw. Umgebungsvariablen: `owner_id`/`BOT_
 | **Verwalter** | die Person, die den Bot technisch betreibt und den Server besitzt | nur über `VERWALTER_ID` (oder `verwalter_id` in `config.json`) |
 | **Besitzer** | Chef im Bot, verwaltet Inhalte und Mitglieder | `BOT_OWNER_ID` bzw. `owner_id` (sonst der Erste mit `/start`) |
 | **Mitglied** | eingeladene Person | Einladungscode (`/code`) |
-| **Einlader** | Mitglied, das selbst Einladungscodes erzeugen darf | Besitzer oder Verwalter schaltet es in `/mitglieder` frei |
+| **Admin** | Mitglied, das einladen und Mitglieder rauswerfen darf (nicht den Besitzer, nicht den Verwalter) | Besitzer oder Verwalter vergibt die Rolle in `/mitglieder` oder auf der Website |
 | **Gast** | sieht nur eine geteilte Verbindung | Code einer geteilten Verbindung |
 
 Der Besitzer ist eine andere Person als der Verwalter und behält seine normalen Rechte im Bot.
@@ -137,14 +137,16 @@ Der Besitzer ist eine andere Person als der Verwalter und behält seine normalen
 |---|---|---|---|---|
 | Suchen, Favoriten, Tracking, wiederkehrende Fahrten | ja | ja | ja | nein |
 | Geteilte Verbindung ansehen und verfolgen | ja | ja | ja | ja |
-| Einladungscodes erzeugen | ja | ja | nur als Einlader (höchstens 5 offene Codes) | nein |
-| `/mitglieder`, Mitglieder entfernen, Einladen erlauben oder entziehen | ja | ja | nein | nein |
+| Einladungscodes erzeugen und widerrufen | ja | ja | nur als Admin (höchstens 5 offene Codes) | nein |
+| `/mitglieder`, Mitglieder rauswerfen | ja | ja | nur als Admin | nein |
+| Rollen vergeben (Admin oder Mitglied) | ja | ja | nein | nein |
 | Braucht eine Einladung | nein | nein | ja | ja |
 | Kann entfernt, gesperrt oder eingeschränkt werden | **nie** | nur durch den Betreiber am Server | durch Besitzer und Verwalter | durch Ablauf des Codes |
 | Server, Konfiguration, Token, Dienste, Logs | nur am Server selbst | nein | nein | nein |
 
-Eine Person, die ein Einlader einlädt, wird ein normales Mitglied, kein Einlader. Entzieht man einem Einlader die Erlaubnis oder entfernt ihn, werden seine offenen Codes ungültig.
-Besitzer und Verwalter bekommen eine Meldung, wenn jemand über einen Einlader dazukommt.
+Eine Person, die ein Admin einlädt, wird ein normales Mitglied. Es wird festgehalten, wer wen eingeladen hat (`invited_by`, sichtbar in `/mitglieder`, bei den Details und auf der Website).
+Entzieht man einem Admin die Rolle oder wirft ihn raus, werden seine offenen Codes ungültig. Das frühere „Einladen erlauben“ gibt es nicht mehr: Wer es hatte, ist seit dem Update ein normales Mitglied (`migrate()`).
+Besitzer und Verwalter bekommen eine Meldung, wenn jemand über einen Admin dazukommt. Admins können keine Rollen vergeben, und einen Besitzer-Wechsel gibt es nicht.
 
 ### Eigene Telegram-Nummer herausfinden
 
@@ -196,7 +198,7 @@ eine Änderung gilt also überall sofort. Jede Person ändert nur ihre eigenen W
 
 - Fehlt ein Feld, gilt der Standard. Bestehende Nutzer behalten dadurch ihr bisheriges Verhalten. `migrate()` läuft bei jedem Start, ist wiederholbar,
   ändert keine gültigen Daten und entfernt nur ungültige gespeicherte Werte.
-- Erinnerungen: Mit Namen lautet die erste „Hallo Dave, deine Fahrt beginnt in 15 min“, die zweite und alle anderen Meldungen bleiben neutral. Ohne Namen ändert sich nichts.
+- Erinnerungen: Mit Namen lautet die erste „Hallo Helmutm, deine Fahrt beginnt in 15 min“, die zweite und alle anderen Meldungen bleiben neutral. Ohne Namen ändert sich nichts.
   Nach Abfahrtsbeginn kommt keine Erinnerung mehr. Ändert man die Zeiten bei einer laufenden Fahrt, gelten schon erreichte Zeitpunkte als erledigt (nichts kommt nachträglich oder doppelt).
 - Alles wird serverseitig geprüft (`apply_settings`, `check_hours`, `check_remind`, `check_nick`). Bei einem Fehler wird nichts gespeichert.
 
@@ -208,11 +210,11 @@ Alle Aufrufe mit `Authorization: Bearer <Sitzung>` (kein Cookie, daher kein CSRF
 |---|---|---|
 | `GET /settings` | angemeldet | eigene Einstellungen |
 | `POST /settings` | angemeldet | `nick`, `autoclear_on`, `autoclear_hours`, `remind_first`, `remind_second` (nur die gesendeten Felder, `null` = aus oder entfernen) |
-| `GET /members` | Besitzer, Verwalter | Mitglieder (mit nicht umkehrbarer `ref` statt Chat-ID), offene Einladungen, Verlauf |
-| `POST /members/invite` | Besitzer, Verwalter | neue Einladung |
-| `DELETE /members/invite?code=` | Besitzer, Verwalter | Einladung widerrufen |
-| `POST /members/inviter` | Besitzer, Verwalter | `{"ref", "on"}` Einladen erlauben oder entziehen |
-| `DELETE /members?ref=` | Besitzer, Verwalter | Mitglied entfernen. Der Verwalter geht nie |
+| `GET /members` | Besitzer, Verwalter, Admin | Mitglieder (mit nicht umkehrbarer `ref` statt Chat-ID), offene Einladungen, Verlauf |
+| `POST /members/invite` | Besitzer, Verwalter, Admin | neue Einladung |
+| `DELETE /members/invite?code=` | Besitzer, Verwalter, Admin | Einladung widerrufen |
+| `POST /members/role` | Besitzer, Verwalter | `{"ref", "role": "admin" oder "mitglied"}` |
+| `DELETE /members?ref=` | Besitzer, Verwalter, Admin | Mitglied rauswerfen. Besitzer und Verwalter gehen nie |
 
 Mitglieder deaktivieren (ohne zu entfernen) gibt es nicht, es bleibt beim Entfernen.
 

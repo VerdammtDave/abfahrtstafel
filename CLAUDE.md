@@ -14,7 +14,7 @@
 - **Verwalter:** betreibt den Bot technisch und besitzt den Server. Genau eine Person, nur über `VERWALTER_ID` (oder `verwalter_id` in `config.json`).
 - **Besitzer:** eine andere Person, Chef im Bot. Verwaltet Inhalte und Mitglieder.
 - **Mitglied:** eingeladen per `/code`. Voller Funktionsumfang ausser der Verwaltung.
-- **Einlader:** Mitglied, dem Besitzer oder Verwalter das Einladen erlaubt haben (`data["inviters"]`). Darf nur Einladungscodes erzeugen, nichts verwalten.
+- **Admin:** Mitglied mit der Rolle Admin (`data["admins"]`, nur Besitzer oder Verwalter vergeben sie). Darf Einladungscodes erzeugen und widerrufen und Mitglieder rauswerfen, aber nie den Besitzer oder den Verwalter, und keine Rollen vergeben. Es gibt genau einen Besitzer.
 - **Gast:** hat den Code einer geteilten Verbindung eingelöst und sieht nur diese.
 
 ## Dauerhafte Regel zum Schutz des Servers (gilt für ALLE künftigen Änderungen)

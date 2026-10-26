@@ -38,7 +38,7 @@ def pruefe(bedingung, text):
 def neu():
     bot.data.clear()
     bot.data.update({"owner": BESITZER, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [GAST],
-                     "shares": {}, "members": [MITGLIED], "invites": {}, "names": {}, "sessions": {}, "inviters": [], "msglog": {}})
+                     "shares": {}, "members": [MITGLIED], "invites": {}, "names": {}, "sessions": {}, "admins": [], "msglog": {}})
     bot.cfg["verwalter_id"] = VERWALTER
     bot.msg_log.clear()
     bot.awaiting.clear()
@@ -63,8 +63,8 @@ def chat(cid):
 
 def test_name():
     neu()
-    s = bot.apply_settings(BESITZER, {"nick": "  Dave  "})
-    pruefe(s["nick"] == "Dave" and chat(BESITZER)["nick"] == "Dave", "Name wird nicht gespeichert")
+    s = bot.apply_settings(BESITZER, {"nick": "  Helmutm  "})
+    pruefe(s["nick"] == "Helmutm" and chat(BESITZER)["nick"] == "Helmutm", "Name wird nicht gespeichert")
     s = bot.apply_settings(BESITZER, {"nick": "Davi"})
     pruefe(s["nick"] == "Davi", "Name laesst sich nicht aendern")
     s = bot.apply_settings(BESITZER, {"nick": None})
@@ -205,11 +205,11 @@ def test_personalisierte_nachricht():
     neu()
     d = punkt(15)
     pruefe(bot.fmt_trip("remind", d).startswith("⏰ Abfahrt in"), "ohne Namen hat sich der Text geaendert")
-    text = bot.fmt_trip("remind", d, nick="Dave")
-    pruefe("Hallo Dave" in text and "beginnt in" in text, f"Name fehlt in der Erinnerung: {text.splitlines()[0]}")
-    pruefe("Dave" not in bot.fmt_trip("change", d, 0, "Dave") and "Dave" not in bot.fmt_trip("cancel", d, nick="Dave"), "Name taucht in jeder Nachricht auf")
+    text = bot.fmt_trip("remind", d, nick="Helmutm")
+    pruefe("Hallo Helmutm" in text and "beginnt in" in text, f"Name fehlt in der Erinnerung: {text.splitlines()[0]}")
+    pruefe("Helmutm" not in bot.fmt_trip("change", d, 0, "Helmutm") and "Helmutm" not in bot.fmt_trip("cancel", d, nick="Helmutm"), "Name taucht in jeder Nachricht auf")
     # ueber check_trip: nur die erste Erinnerung nennt den Namen
-    bot.apply_settings(BESITZER, {"nick": "Dave", "remind_first": 30, "remind_second": 10})
+    bot.apply_settings(BESITZER, {"nick": "Helmutm", "remind_first": 30, "remind_second": 10})
     c = bot.get_chat(BESITZER)
     w = {"wid": "w1", "key": "k", "stop": "s", "line": "S1", "stop_name": "Halt", "planned": time.time() + 3600}
     c["trips"].append(w)
@@ -219,7 +219,7 @@ def test_personalisierte_nachricht():
         d = punkt(minuten, jetzt=jetzt)
         d["key"] = "k"
         bot.check_trip(str(BESITZER), c, w, {"s": [d]}, jetzt, ausgang)
-    pruefe(len(ausgang) == 2 and "Dave" in ausgang[0][1] and "Dave" not in ausgang[1][1], "Anrede bei Erinnerung 1 und nicht bei 2 erwartet")
+    pruefe(len(ausgang) == 2 and "Helmutm" in ausgang[0][1] and "Helmutm" not in ausgang[1][1], "Anrede bei Erinnerung 1 und nicht bei 2 erwartet")
     bot.apply_settings(BESITZER, {"nick": None})
     c["trips"].append(w)
     bot.data["state"][str(BESITZER)].clear()
@@ -293,8 +293,8 @@ def test_telegram_eingabe():
         bot.handle_message({"chat": {"id": cid}, "text": text, "from": {"first_name": "T"}})
     knopf(BESITZER, "st:pn")
     pruefe(bot.awaiting.get(BESITZER, ("",))[0] == "/_name", "Name festlegen fragt nicht nach")
-    schreibe(BESITZER, "Dave")
-    pruefe(chat(BESITZER).get("nick") == "Dave" and BESITZER not in bot.awaiting, "Name per Text wird nicht gespeichert")
+    schreibe(BESITZER, "Helmutm")
+    pruefe(chat(BESITZER).get("nick") == "Helmutm" and BESITZER not in bot.awaiting, "Name per Text wird nicht gespeichert")
     knopf(BESITZER, "st:px")
     pruefe(not chat(BESITZER).get("nick"), "Name entfernen funktioniert nicht")
     # falsche Eingabe: erklaert, Frage bleibt offen, Abbrechen beendet sauber
@@ -358,11 +358,11 @@ def test_web_einstellungen():
     code, out = web("GET", "/settings", a)
     pruefe(code == 200 and out["autoclear"]["hours"] == 47 and out["remind"]["first"] == 15 and out["remind"]["second"] == 5 and out["nick"] == "", "Standardwerte der Website stimmen nicht")
     pruefe(out["admin"] is True and web("GET", "/settings", m)[1]["admin"] is False, "Admin-Kennzeichen falsch")
-    code, out = web("POST", "/settings", a, {"nick": "Dave", "autoclear_hours": 5, "remind_first": 30, "remind_second": 10, "autoclear_on": True})
-    pruefe(code == 200 and out["nick"] == "Dave" and out["autoclear"]["hours"] == 5 and out["autoclear"]["on"], "Speichern ueber die Website funktioniert nicht")
+    code, out = web("POST", "/settings", a, {"nick": "Helmutm", "autoclear_hours": 5, "remind_first": 30, "remind_second": 10, "autoclear_on": True})
+    pruefe(code == 200 and out["nick"] == "Helmutm" and out["autoclear"]["hours"] == 5 and out["autoclear"]["on"], "Speichern ueber die Website funktioniert nicht")
     # dieselben Werte in Telegram
     text, _ = bot.st_view(BESITZER, "m")
-    pruefe("Dave" in text and "5 Stunden" in text and "30 min und 10 min" in text, "Telegram zeigt die Werte der Website nicht")
+    pruefe("Helmutm" in text and "5 Stunden" in text and "30 min und 10 min" in text, "Telegram zeigt die Werte der Website nicht")
     pruefe(bot.clear_hours(BESITZER) == 5 and bot.active_remind(chat(BESITZER)) == [30, 10], "Telegram nutzt die Werte der Website nicht")
     # und umgekehrt
     knopf(BESITZER, "st:ch:12")
@@ -372,12 +372,12 @@ def test_web_einstellungen():
     # Fehler: verstaendliche Meldung, nichts gespeichert, ein Fehler stoppt das ganze Paket
     code, out = web("POST", "/settings", a, {"nick": "Neu", "autoclear_hours": 2})
     pruefe(code == 400 and "3" in out["error"], "ungueltige Stunden werden serverseitig nicht abgelehnt")
-    pruefe(chat(BESITZER)["nick"] == "Dave", "bei einem Fehler wurde ein Teil trotzdem gespeichert")
+    pruefe(chat(BESITZER)["nick"] == "Helmutm", "bei einem Fehler wurde ein Teil trotzdem gespeichert")
     code, out = web("POST", "/settings", a, {"remind_first": 5, "remind_second": 5})
     pruefe(code == 400 and chat(BESITZER)["remind"] == [60, 10], "gleiche Erinnerungszeiten werden akzeptiert")
     # nur eigene Einstellungen: cid, Rolle und Co. aus der Anfrage werden ignoriert
     code, _ = web("POST", "/settings", m, {"cid": BESITZER, "chat": BESITZER, "admin": True, "owner": MITGLIED, "nick": "Mitglied"})
-    pruefe(chat(BESITZER)["nick"] == "Dave" and chat(MITGLIED)["nick"] == "Mitglied", "Anfrage konnte fremde Einstellungen aendern")
+    pruefe(chat(BESITZER)["nick"] == "Helmutm" and chat(MITGLIED)["nick"] == "Mitglied", "Anfrage konnte fremde Einstellungen aendern")
     pruefe(not bot.is_admin(MITGLIED) and bot.data["owner"] == BESITZER, "Anfrage konnte die Rolle aendern")
     pruefe(web("GET", "/settings", m)[1]["admin"] is False, "Mitglied wurde Admin")
 
@@ -386,7 +386,7 @@ def test_web_mitglieder():
     neu()
     a, v, m = session(BESITZER, "a"), session(VERWALTER, "v"), session(MITGLIED, "m")
     for methode, pfad in (("GET", "/members"), ("POST", "/members/invite"), ("DELETE", "/members/invite"),
-                          ("DELETE", "/members"), ("POST", "/members/inviter")):
+                          ("DELETE", "/members"), ("POST", "/members/role")):
         code, _ = web(methode, pfad, m, {"ref": "x", "on": True}, {"code": ["ABCD"], "ref": ["x"]})
         pruefe(code == 403, f"Mitglied darf {methode} {pfad}")
         code, _ = web(methode, pfad, "", {}, {})
@@ -420,10 +420,27 @@ def test_web_mitglieder():
     bot.cleanup_shares()
     pruefe(any(h["status"] == "abgelaufen" for h in web("GET", "/members", a)[1]["history"]), "abgelaufene Einladung fehlt im Verlauf")
     # Einladen erlauben, Mitglied entfernen
-    code, out = web("POST", "/members/inviter", a, {"ref": zeile["ref"], "on": True})
-    pruefe(code == 200 and MITGLIED in bot.data["inviters"], "Einladen erlauben funktioniert nicht")
+    pruefe(zeile["can_role"] and zeile["removable"] and zeile["invited_by"] == "", "Zeile des Mitglieds hat falsche Flags")
+    pruefe(not any(r["can_role"] or r["removable"] for r in web("GET", "/members", a)[1]["members"] if r["role"] in ("Besitzer", "Verwalter")), "Besitzer oder Verwalter sind aenderbar markiert")
+    pruefe(any(r["invited_by"] for r in web("GET", "/members", a)[1]["members"] if r["name"] == "Neu"), "es wird nicht angezeigt, wer eingeladen hat")
+    code, out = web("POST", "/members/role", a, {"ref": zeile["ref"], "role": "admin"})
+    pruefe(code == 200 and MITGLIED in bot.data["admins"] and any(r["role"] == "Admin" for r in out["members"]), "Admin-Rolle vergeben funktioniert nicht")
+    # Admin: sieht die Verwaltung, kann einladen und rauswerfen, aber keine Rollen vergeben und Besitzer und Verwalter nicht entfernen
+    pruefe(web("GET", "/settings", m)[1]["admin"] is True, "Admin sieht die Mitgliederverwaltung nicht")
+    pruefe(web("GET", "/members", m)[0] == 200 and not any(r["can_role"] for r in web("GET", "/members", m)[1]["members"]), "Admin sieht Rollenknoepfe")
+    pruefe(web("POST", "/members/invite", m)[0] == 200, "Admin kann nicht einladen")
+    fremd_ref = next(r["ref"] for r in web("GET", "/members", a)[1]["members"] if r["name"] == "Neu")
+    pruefe(web("POST", "/members/role", m, {"ref": fremd_ref, "role": "admin"})[0] == 400 and FREMD not in bot.data["admins"], "Admin konnte eine Rolle vergeben")
+    pruefe(web("DELETE", "/members", m, None, {"ref": [bot.member_ref(BESITZER)]})[0] == 400 and bot.data["owner"] == BESITZER, "Admin konnte den Besitzer entfernen")
+    bot.data["members"].append(VERWALTER)
+    pruefe(web("DELETE", "/members", m, None, {"ref": [bot.member_ref(VERWALTER)]})[0] == 400 and VERWALTER in bot.data["members"], "Admin konnte den Verwalter entfernen")
+    bot.data["members"].remove(VERWALTER)
+    vcode = web("POST", "/members/invite", v)[1]["invites"][-1]["code"]
+    pruefe(web("DELETE", "/members/invite", m, None, {"code": [vcode]})[0] == 400 and vcode in bot.data["invites"], "Admin konnte eine Einladung des Verwalters widerrufen")
+    bot.data["invites"].pop(vcode)
+    pruefe(web("DELETE", "/members", m, None, {"ref": [fremd_ref]})[0] == 200 and FREMD not in bot.data["members"], "Admin konnte kein Mitglied rauswerfen")
     code, out = web("DELETE", "/members", a, None, {"ref": [zeile["ref"]]})
-    pruefe(code == 200 and MITGLIED not in bot.data["members"] and MITGLIED not in bot.data["inviters"], "Mitglied entfernen funktioniert nicht")
+    pruefe(code == 200 and MITGLIED not in bot.data["members"] and MITGLIED not in bot.data["admins"], "Mitglied entfernen funktioniert nicht")
     # Besitzer und Verwalter sind nicht entfernbar, auch nicht mit erratenen Kennungen
     for r in web("GET", "/members", a)[1]["members"]:
         if r["role"] in ("Besitzer", "Verwalter"):
@@ -432,8 +449,10 @@ def test_web_mitglieder():
     ref = bot.member_ref(VERWALTER)
     code, _ = web("DELETE", "/members", a, None, {"ref": [ref]})
     pruefe(VERWALTER in bot.data["members"] and code == 400, "Verwalter konnte ueber die Website entfernt werden")
-    code, _ = web("POST", "/members/inviter", a, {"ref": ref, "on": True})
-    pruefe(VERWALTER not in bot.data["inviters"], "Verwalter wurde Einlader")
+    code, _ = web("POST", "/members/role", a, {"ref": ref, "role": "admin"})
+    pruefe(VERWALTER not in bot.data["admins"] and code == 400, "Verwalter bekam eine Rolle")
+    code, _ = web("POST", "/members/role", a, {"ref": bot.member_ref(BESITZER), "role": "admin"})
+    pruefe(BESITZER not in bot.data["admins"], "Besitzer bekam eine Rolle")
     code, _ = web("DELETE", "/members", a, None, {"ref": ["gibtesnicht"]})
     pruefe(code == 400, "unbekannte Kennung wird nicht abgelehnt")
     # Einladungen des Verwalters kann nur er selbst widerrufen
@@ -453,7 +472,7 @@ def test_telegram_mitglieder():
     daten = [k["callback_data"] for z in GESENDET[-1][2]["reply_markup"]["inline_keyboard"] for k in z]
     pruefe("mn:0" in daten and "mo:0" in daten and f"md:{MITGLIED}" in daten, "Verwaltungsknoepfe fehlen")
     for wer in (MITGLIED, GAST, FREMD):
-        for aktion in ("mn:0", "mo:0", f"md:{MITGLIED}", "mx:ABCD", f"mrm:{MITGLIED}", f"mi:{MITGLIED}", "mm:0"):
+        for aktion in ("mn:0", "mo:0", f"md:{MITGLIED}", "mx:ABCD", f"mrm:{MITGLIED}", f"mr:{MITGLIED}:a", "mm:0"):
             knopf(wer, aktion)
             pruefe(not TG and not GESENDET, f"{wer} konnte mit {aktion} etwas ausloesen")
     pruefe(MITGLIED in bot.data["members"] and not bot.data["invites"], "unberechtigte Knoepfe haben Daten veraendert")
@@ -474,7 +493,7 @@ def test_neustart_und_migration():
     neu()
     bot.cfg["data_file"] = "test_neustart.json"
     bot.save = ORIG_SAVE
-    bot.apply_settings(BESITZER, {"nick": "Dave", "autoclear_on": True, "autoclear_hours": 5, "remind_first": 30, "remind_second": 10})
+    bot.apply_settings(BESITZER, {"nick": "Helmutm", "autoclear_on": True, "autoclear_hours": 5, "remind_first": 30, "remind_second": 10})
     bot.note_invite(BESITZER, "widerrufen")
     bot.save()
     bot.data.clear()
@@ -482,7 +501,7 @@ def test_neustart_und_migration():
     bot.load()
     bot.migrate()
     c = chat(BESITZER)
-    pruefe(c["nick"] == "Dave" and bot.clear_hours(BESITZER) == 5 and bot.active_remind(c) == [30, 10] and c["autoclear"], "Einstellungen ueberleben den Neustart nicht")
+    pruefe(c["nick"] == "Helmutm" and bot.clear_hours(BESITZER) == 5 and bot.active_remind(c) == [30, 10] and c["autoclear"], "Einstellungen ueberleben den Neustart nicht")
     pruefe(bot.data["invite_hist"][-1]["status"] == "widerrufen", "Einladungsverlauf ueberlebt den Neustart nicht")
     # Alte Daten ohne neue Felder: Standardwerte, nichts geht verloren
     alt = {"favs": [{"sid": "a", "id": "b", "name": "c", "mode": "all", "seeded": False}], "threshold": 5, "paused": False, "autoclear": True,
@@ -493,6 +512,12 @@ def test_neustart_und_migration():
     bot.migrate()                                                 # wiederholbar
     pruefe(bot.data["chats"]["77"] == alt, "Migration hat bestehende Daten veraendert")
     pruefe(bot.clear_hours(77) == 47 and bot.active_remind(bot.data["chats"]["77"]) == [15, 5] and not nick_von(77), "bestehende Nutzer behalten die Standardwerte nicht")
+    # frueheres Einladerecht wird zu normalem Mitglied, Rollen von Nicht-Mitgliedern verfallen
+    bot.data["members"] = [MITGLIED]
+    bot.data["inviters"] = [MITGLIED]
+    bot.data["admins"] = [MITGLIED, FREMD, VERWALTER]
+    bot.migrate()
+    pruefe("inviters" not in bot.data and bot.data["admins"] == [MITGLIED] and bot.data["invited_by"] == {}, "Migration der Rollen stimmt nicht")
     # kaputte gespeicherte Werte fallen auf den Standard
     bot.data["chats"]["88"] = {"autoclear_h": 1, "remind": [3, 9], "nick": "x" * 99, "favs": [], "trips": []}
     bot.migrate()
@@ -507,7 +532,7 @@ def nick_von(cid):
 
 def test_keine_geheimnisse():
     neu()
-    bot.apply_settings(BESITZER, {"nick": "Dave"})
+    bot.apply_settings(BESITZER, {"nick": "Helmutm"})
     ausgaben = []
     for ansicht in ("m", "p", "c", "r", "r1", "r2"):
         ausgaben.append(str(bot.st_view(BESITZER, ansicht)))

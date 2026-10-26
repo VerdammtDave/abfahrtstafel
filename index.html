@@ -145,6 +145,8 @@
   .setbtns { display: flex; gap: 8px; margin-bottom: 10px; }
   .modal .card button.primary { background: var(--accent); color: var(--tab-on); border-color: transparent; font-weight: 600; }
   .modal .card button.danger { color: #ff6b61; border-color: currentColor; }
+  .modal .card button.hammer { background: #d92d20; color: #fff; border-color: #d92d20; font-weight: 700; }
+  .modal .card button.hammer:hover { background: #b42318; }
   .modal .card button:disabled { opacity: .5; }
   .memrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line, rgba(255,255,255,.12)); flex-wrap: wrap; }
   .memrow .role { display: block; font-size: 12.5px; opacity: .7; }
@@ -349,6 +351,10 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.6.0', date: '26.10.2026', items: [
+    'Rollen: Admin (darf einladen und Mitglieder rauswerfen) und Mitglied (nutzt nur den Bot). Es gibt genau einen Besitzer',
+    'In der Mitgliederverwaltung steht jetzt, wer wen eingeladen hat',
+    'Der Rauswurf-Knopf ist jetzt ein roter Hammer' ] },
   { v: '1.5.0', date: '26.10.2026', items: [
     'Neuer Knopf Einstellungen: Anzeigename, automatisches Löschen (3 bis 47 Stunden) und eigene Erinnerungszeiten vor der Fahrt',
     'Dieselben Einstellungen gibt es in Telegram mit /einstellungen',
@@ -775,7 +781,7 @@ function settingsHtml(s) {
   return `<h3 class="alhead">Einstellungen</h3>
   <form id="setForm" novalidate>
     <section class="setsec"><h4>Persönliches Profil</h4>
-      <label class="fld">Anzeigename<input id="setNick" maxlength="30" value="${esc(s.nick)}" placeholder="z. B. Dave" autocomplete="off"></label>
+      <label class="fld">Anzeigename<input id="setNick" maxlength="30" value="${esc(s.nick)}" placeholder="z. B. Helmutm" autocomplete="off"></label>
       <p class="hint">Mit diesem Namen spricht dich der Bot in Erinnerungen an. Leer lassen für neutrale Nachrichten.</p></section>
     <section class="setsec"><h4>Automatische Löschung</h4>
       <div class="setrow"><label class="sw"><input type="checkbox" id="acOn" ${a.on ? 'checked' : ''}> Nachrichten im Telegram-Chat automatisch löschen</label></div>
@@ -876,16 +882,17 @@ function renderMembers() {
   if (!d || !box) return;
   const q = (byId('memQ').value || '').trim().toLowerCase();
   const rows = d.members.filter(m => !q || (m.name + ' ' + m.role).toLowerCase().includes(q)).map(m =>
-    `<div class="memrow"><div><b>${esc(m.name)}</b><span class="role">${esc(m.role)}${m.inviter ? ' · darf einladen' : ''}</span></div>${m.removable
-      ? `<div class="memact"><button type="button" data-act="inviter" data-ref="${esc(m.ref)}" data-on="${m.inviter ? 0 : 1}">${m.inviter ? 'Einladen entziehen' : 'Einladen erlauben'}</button>
-         <button type="button" class="danger" data-act="remove" data-ref="${esc(m.ref)}">Entfernen</button></div>` : ''}</div>`).join('') || '<p class="hint">Keine Treffer.</p>';
+    `<div class="memrow"><div><b>${esc(m.name)}</b><span class="role">${esc(m.role)}${m.invited_by ? ' · eingeladen von ' + esc(m.invited_by) : ''}</span></div>${m.removable || m.can_role
+      ? `<div class="memact">${m.can_role ? `<button type="button" data-act="role" data-ref="${esc(m.ref)}" data-role="${m.role === 'Admin' ? 'mitglied' : 'admin'}">${m.role === 'Admin' ? 'Zum Mitglied machen' : 'Zum Admin machen'}</button>` : ''}
+         ${m.removable ? `<button type="button" class="hammer" data-act="remove" data-ref="${esc(m.ref)}" aria-label="${esc(m.name)} rauswerfen">🔨 Rauswerfen</button>` : ''}</div>` : ''}</div>`).join('') || '<p class="hint">Keine Treffer.</p>';
   const inv = d.invites.map(i => `<div class="memrow"><div><code>/code ${esc(i.code)}</code><span class="role">von ${esc(i.by)} · gültig bis ${when(i.expires)}</span></div>
     <div class="memact"><button type="button" data-act="copy" data-code="${esc(i.code)}">Kopieren</button><button type="button" data-act="revoke" data-code="${esc(i.code)}">Widerrufen</button></div></div>`).join('')
     || '<p class="hint">Keine offenen Einladungen.</p>';
   const hist = d.history.slice(0, 8).map(h => `<li>${esc(h.status)}${h.who ? ' (' + esc(h.who) + ')' : ''} · ${when(h.ts)}</li>`).join('');
   box.innerHTML = `<h5>Mitglieder</h5>${rows}
     <h5>Einladungen</h5><button type="button" class="primary" data-act="invite">Neue Einladung erstellen</button>${inv}
-    <p class="hint">Eine Einladung gilt 24 Stunden, nur einmal, und gibt nur Mitglieder-Zugang, nie Verwaltungsrechte. Die Person schickt dem Bot die Zeile „/code …“.</p>
+    <p class="hint">Eine Einladung gilt 24 Stunden, nur einmal, und gibt nur Mitglieder-Zugang, nie Verwaltungsrechte. Die Person schickt dem Bot die Zeile „/code …“.
+    Rollen: Admin darf einladen und Mitglieder rauswerfen (nicht den Besitzer), Mitglied nutzt nur den Bot. Rollen vergeben nur Besitzer und Verwalter.</p>
     ${hist ? '<h5>Verlauf</h5><ul class="hist">' + hist + '</ul>' : ''}<div id="memMsg" class="setmsg" role="status" aria-live="polite"></div>`;
 }
 
@@ -901,15 +908,15 @@ document.addEventListener('click', async e => {
   }
   if (act === 'remove' && b.dataset.sure !== '1') {               // erst nachfragen, dann entfernen
     b.dataset.sure = '1';
-    b.textContent = 'Wirklich entfernen?';
-    setTimeout(() => { if (b.isConnected) { b.dataset.sure = ''; b.textContent = 'Entfernen'; } }, 4000);
+    b.textContent = '🔨 Wirklich rauswerfen?';
+    setTimeout(() => { if (b.isConnected) { b.dataset.sure = ''; b.textContent = '🔨 Rauswerfen'; } }, 4000);
     return;
   }
   b.disabled = true;
   try {
     const call = { invite: () => bot('POST', '/members/invite'),
       revoke: () => bot('DELETE', '/members/invite?code=' + encodeURIComponent(b.dataset.code)),
-      inviter: () => bot('POST', '/members/inviter', { ref: b.dataset.ref, on: b.dataset.on === '1' }),
+      role: () => bot('POST', '/members/role', { ref: b.dataset.ref, role: b.dataset.role }),
       remove: () => bot('DELETE', '/members?ref=' + encodeURIComponent(b.dataset.ref)) }[act];
     setAdmin = await call();
     renderMembers();
