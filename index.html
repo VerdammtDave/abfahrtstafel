@@ -95,6 +95,7 @@
   .suggest { position: absolute; left: 0; right: 0; top: 100%; background: var(--white); color: #000; z-index: 10; border: 2px solid var(--yellow); }
   .suggest button { display: block; width: 100%; text-align: left; font-size: 16px; padding: 6px 8px; border: 0; border-bottom: 1px solid #ccc; background: none; color: #000; }
   .suggest button:hover { background: var(--yellow); }
+  .suggest button small { opacity: .6; font-size: .85em; }
   .chip { background: none; border: 2px solid var(--white); color: var(--white); font-size: 14px; padding: 3px 10px; }
   .chip.active { background: var(--chip-ind); color: var(--chip-on); }
 
@@ -465,6 +466,9 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.9.2', date: '26.10.2026', items: [
+    'Haltestellennamen stimmen jetzt überall: Die Tafel zeigt den Namen, den die Abfahrten tragen (z. B. „Praha hlavní nádraží“ statt „Praha, hlavni nadrazi“), Rohnamen mit Doppelkomma werden bereinigt',
+    'In der Suche steht der Ort dabei („Hlavní nádraží · Brno“), und gleiche Namen in verschiedenen Orten werden nicht mehr zusammengeworfen' ] },
   { v: '1.9.1', date: '26.10.2026', items: [
     'Der Aktualisieren-Knopf dreht sich immer eine ganze Runde, auch wenn die Daten sofort da sind' ] },
   { v: '1.9.0', date: '26.10.2026', items: [
@@ -524,6 +528,14 @@ const VIA_PARALLEL = 6;               // gleichzeitige Anfragen für die „Übe
 // Symbole (Linien, Lucide-Stil). ic('name') liefert das fertige SVG, die Farbe kommt von der Textfarbe.
 const IC = {star: `<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>`, bell: `<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>`, sliders: `<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>`, sparkles: `<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>`, out: `<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>`, send: `<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>`, board: `<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/>`, moon: `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>`, sun: `<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>`, menu: `<line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/>`, x: `<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`, hammer: `<path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/>`, bus: `<path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/>`, train: `<path d="M8 3.1V7a4 4 0 0 0 8 0V3.1"/><path d="m9 15-1-1"/><path d="m15 15 1-1"/><path d="M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Z"/><path d="m8 19-2 3"/><path d="m16 19 2 3"/>`, back: `<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>`, repeat: `<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>`};
 const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
+// Haltestellennamen: manche Quellen liefern Rohnamen mit Doppelkomma oder ohne Leerzeichen nach dem Komma
+const cleanName = n => String(n || '').replace(/\s*,\s*,\s*/g, ', ').replace(/\s*,\s*/g, ', ').replace(/\s{2,}/g, ' ').trim();
+// Name, den die Abfahrten selbst tragen (der echte), statt des Suchtreffers
+const commonName = deps => {
+  const n = new Map();
+  (deps || []).forEach(d => d.stopName && n.set(d.stopName, (n.get(d.stopName) || 0) + 1));
+  return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+};
 const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
@@ -568,10 +580,11 @@ async function fetchDepartures(id) {
       delay: (new Date(when) - new Date(planned)) / 1000,
       line: { name: st.displayName || st.routeShortName },
       mode: st.mode,
-      direction: st.headsign,
+      direction: cleanName(st.headsign),
       platform: p.track || '',
       cancelled: !!(st.cancelled || st.tripCancelled),
-      stopName: p.name,
+      stopName: cleanName(p.name),
+      placeId: p.stopId,
       alerts: activeAlerts([...(st.alerts || []), ...(p.alerts || [])], new Date(when))
     };
   });
@@ -630,7 +643,7 @@ const clock = iso => iso ? hhmm(iso) : '';
 
 function tripHtml(d, leg) {
   const stops = [leg.from, ...(leg.intermediateStops || []), leg.to];
-  const here = Math.max(0, stops.findIndex(p => (d.stop?.id && p.stopId === d.stop.id) || p.name === d.stopName));
+  const here = Math.max(0, stops.findIndex(p => p.stopId === d.placeId || cleanName(p.name) === d.stopName));
   // erster Halt zeigt die Abfahrt, alle anderen die Ankunft
   const times = stops.map((p, i) => {
     const plan = i === 0 ? p.scheduledDeparture || p.departure : p.scheduledArrival || p.arrival;
@@ -650,13 +663,13 @@ function tripHtml(d, leg) {
     const t = times[i];
     const zeit = t.late >= 1 ? `<b class="late">${clock(t.real)}</b><s>${clock(t.plan)}</s>` : `<b>${clock(t.real || t.plan)}</b>`;
     const cls = [i === here ? 'here' : i < here ? 'past' : '', i === naechster ? 'next' : ''].join(' ').trim();
-    return `<li class="${cls}"><button type="button" class="stoplink" data-id="${esc(p.stopId || '')}" data-name="${esc(p.name)}" ${p.stopId ? '' : 'disabled'}>
-      <span class="stime">${zeit}</span><span class="sname">${esc(p.name)}${i === here ? `<em${i === naechster ? ' class="nx"' : ''}>hier</em>` : ''}${i === naechster && i !== here ? ' <em class="nx">nächster Halt</em>' : ''}</span><span class="strack">${p.track ? esc(platformLabel(d.mode) + ' ' + p.track) : ''}</span></button></li>`;
+    return `<li class="${cls}"><button type="button" class="stoplink" data-id="${esc(p.stopId || '')}" data-name="${esc(cleanName(p.name))}" ${p.stopId ? '' : 'disabled'}>
+      <span class="stime">${zeit}</span><span class="sname">${esc(cleanName(p.name))}${i === here ? `<em${i === naechster ? ' class="nx"' : ''}>hier</em>` : ''}${i === naechster && i !== here ? ' <em class="nx">nächster Halt</em>' : ''}</span><span class="strack">${p.track ? esc(platformLabel(d.mode) + ' ' + p.track) : ''}</span></button></li>`;
   }).join('');
-  return `<h3 class="alhead">${ic(d.mode === 'BUS' ? 'bus' : 'train')} ${esc(d.line?.name || '')} → ${esc(d.direction || last.name)} ${stand}${live ? '<span class="live" title="Echtzeitdaten">Live</span>' : ''}</h3>
+  return `<h3 class="alhead">${ic(d.mode === 'BUS' ? 'bus' : 'train')} ${esc(d.line?.name || '')} → ${esc(d.direction || cleanName(last.name))} ${stand}${live ? '<span class="live" title="Echtzeitdaten">Live</span>' : ''}</h3>
     <div class="tripsum">
-      <div><span>Von</span><b>${esc(first.name)}</b><small>ab ${clock(times[0].real || times[0].plan)}</small></div>
-      <div><span>Nach</span><b>${esc(last.name)}</b><small>an ${clock(times[times.length - 1].real || times[times.length - 1].plan)}</small></div>
+      <div><span>Von</span><b>${esc(cleanName(first.name))}</b><small>ab ${clock(times[0].real || times[0].plan)}</small></div>
+      <div><span>Nach</span><b>${esc(cleanName(last.name))}</b><small>an ${clock(times[times.length - 1].real || times[times.length - 1].plan)}</small></div>
       <div><span>Strecke</span><b>${stops.length} Halte${dur ? ' · ' + dur + ' min' : ''}</b><small>${rest > 0 ? rest + ' Halte nach ' + esc(d.stopName) : 'Endhaltestelle'}</small></div>
     </div>
     <p class="hint">Tippe auf eine Haltestelle, um ihre Abfahrten zu sehen.${naechster > 0 ? ' <button type="button" class="linkbtn" id="jumpNext">Zum nächsten Halt</button>' : ''}</p>
@@ -677,9 +690,10 @@ async function openTrip(d) {
 async function fetchVia(d) {
   if (viaCache.has(d.tripId)) return viaCache.get(d.tripId);
   const leg = await fetchTrip(d.tripId);
-  const all = [leg.from, ...(leg.intermediateStops || []), leg.to].map(x => x.name);
-  const i = all.indexOf(d.stopName);
-  const via = all.slice(i + 1, -1).join(', ');       // ohne aktuellen Halt und Ziel
+  const pts = [leg.from, ...(leg.intermediateStops || []), leg.to];
+  let i = pts.findIndex(x => x.stopId === d.placeId);                   // erst über die ID, nur sonst über den Namen
+  if (i < 0) i = pts.findIndex(x => cleanName(x.name) === d.stopName);
+  const via = i < 0 ? '' : pts.slice(i + 1, -1).map(x => cleanName(x.name)).join(', ');       // ohne aktuellen Halt und Ziel
   viaCache.set(d.tripId, via);
   return via;
 }
@@ -788,7 +802,14 @@ async function fillVia(el, list, myGen) {
 async function load(stop, tag, myGen) {
   let deps = null, error = null;
   try { deps = await fetchDepartures(stop.id); deps.forEach(d => d.stop = stop); } catch (e) { error = e.message; }
-  return { html: boardHtml(stop, deps, error, tag), deps };
+  // Der Suchtreffer heißt oft anders (z. B. „Praha, hlavni nadrazi“). Gezeigt wird der Name, den die Abfahrten tragen.
+  const shown = { ...stop, name: commonName(deps) || cleanName(stop.name) };
+  if (view === 'board' && current && current.id === stop.id && shown.name !== current.name) {
+    current.name = shown.name;
+    store.set('current', current);
+    $('#q').value = shown.name;
+  }
+  return { html: boardHtml(shown, deps, error, tag), deps };
 }
 
 let loads = 0;
@@ -819,7 +840,7 @@ async function renderBoards() {
   if (view === 'favs' && !favSel) {
     $('#out').innerHTML = favs.length
       ? `<div class="favlist"><div class="cols" style="grid-template-columns:1fr"><div>Favoriten</div></div>${
-          favs.map(f => `<button class="favitem" data-id="${esc(f.id)}">${esc(f.name)}<span>›</span></button>`).join('')}</div>`
+          favs.map(f => `<button class="favitem" data-id="${esc(f.id)}">${esc(cleanName(f.name))}<span>›</span></button>`).join('')}</div>`
       : '<div class="msg">Noch keine Favoriten. Markiere Haltestellen mit dem Stern auf der Abfahrten-Seite.</div>';
     return;
   }
@@ -890,9 +911,16 @@ $('#q').addEventListener('input', e => {
       const res = await api(`/geocode?text=${encodeURIComponent(q)}&type=STOP`);
       const box = $('#suggest');
       const seen = new Set();
-      box.innerHTML = res.filter(s => s.type === 'STOP' && !seen.has(s.name) && seen.add(s.name)).slice(0, 8).map(s =>
-        `<button data-id="${esc(s.id)}" data-name="${esc(s.name)}">${isFav(s.id) ? ic('star', 'fill') + ' ' : ''}${esc(s.name)}</button>`).join('')
-        || '<button disabled>Keine Treffer</button>';
+      // Ort dazuschreiben, wenn der Name ihn nicht enthält („Hlavní nádraží · Brno“). Gleiche Namen in verschiedenen Orten bleiben getrennt.
+      const ort = s => (s.areas || []).find(a => a.default)?.name.replace(/^(SO|obvod)\s+/i, '') || '';
+      box.innerHTML = res.filter(s => {
+        const key = cleanName(s.name).toLowerCase() + '|' + ort(s);
+        return s.type === 'STOP' && !seen.has(key) && seen.add(key);
+      }).slice(0, 8).map(s => {
+        const name = cleanName(s.name), o = ort(s);
+        const hint = o && !name.toLowerCase().includes(o.toLowerCase()) ? `<small> · ${esc(o)}</small>` : '';
+        return `<button data-id="${esc(s.id)}" data-name="${esc(name)}">${isFav(s.id) ? ic('star', 'fill') + ' ' : ''}${esc(name)}${hint}</button>`;
+      }).join('') || '<button disabled>Keine Treffer</button>';
       box.classList.remove('hidden');
     } catch { /* nächste Eingabe versucht es erneut */ }
   }, 300);

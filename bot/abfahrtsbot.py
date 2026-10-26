@@ -267,13 +267,22 @@ def vehicle(mode):
     return "bus" if mode == "BUS" else "bahn"
 
 
+def clean_name(n):
+    """Haltestellennamen bereinigen: manche Quellen liefern Rohnamen wie 'Praha,,Hlavní nádraží' oder 'Ostrava,hlavní nádraží'."""
+    n = re.sub(r"\s*,\s*,\s*", ", ", str(n or ""))
+    return re.sub(r"\s{2,}", " ", re.sub(r"\s*,\s*", ", ", n)).strip()
+
+
 def search_stops(text):
     q = urllib.parse.urlencode({"text": text, "type": "STOP"})
     seen, out = set(), []
     for s in http_json(f"{MOTIS}/geocode?{q}"):
-        if s.get("type") == "STOP" and s["name"] not in seen:
-            seen.add(s["name"])
-            out.append({"id": s["id"], "name": s["name"]})
+        name = clean_name(s["name"])
+        area = next((a["name"] for a in s.get("areas", []) if a.get("default")), "")
+        if s.get("type") == "STOP" and (name, area) not in seen:      # gleiche Namen in verschiedenen Orten bleiben getrennt
+            seen.add((name, area))
+            ort = re.sub(r"^(SO|obvod)\s+", "", area, flags=re.I)
+            out.append({"id": s["id"], "name": name + (f" ({ort})" if ort and ort.lower() not in name.lower() else "")})
     return out[:8]
 
 
@@ -290,8 +299,8 @@ def fetch_departures(stop_id, n=40):
             "kind": vehicle(st["mode"]),
             "line": line,
             "lk": re.sub(r"\s*\(\d+\)$", "", line),     # "RE19 (77035)" -> "RE19"
-            "dest": st.get("headsign", ""),
-            "stop": p["name"],
+            "dest": clean_name(st.get("headsign", "")),
+            "stop": clean_name(p["name"]),
             "track": p.get("track") or "",
             "planned": planned,
             "actual": actual,
