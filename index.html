@@ -121,6 +121,7 @@
   .track .gleis { display: flex; justify-content: flex-end; align-items: flex-start; gap: 12px; padding-right: 14px; }
   .track .gl { text-align: right; min-width: 40px; }
   .vz { font-size: 16px; font-weight: bold; margin-left: 10px; vertical-align: middle; color: var(--st-yellow); }
+  .alt { text-decoration: line-through; opacity: .7; margin-right: 6px; }
   .vz.orange { color: var(--st-orange); }
   .vz.red { color: var(--st-red); }
   .cancel .zeit .vz { text-decoration: none; opacity: 1; }
@@ -385,6 +386,11 @@ function dayTag(iso) {
     : ' · ' + dt.toLocaleDateString('de-DE', { weekday: 'short' });
 }
 
+// bei Verspätung steht die neue Zeit groß, die geplante klein und durchgestrichen darunter
+const verspaetet = (delayMin, cancelled) => !cancelled && delayMin >= 1;
+const zeitHtml = (planned, actual, delayMin, cancelled) => hhmm(verspaetet(delayMin, cancelled) ? actual : planned);
+const altHtml = (planned, delayMin, cancelled) => verspaetet(delayMin, cancelled) ? `<s class="alt">${hhmm(planned)}</s>` : '';
+
 function rowHtml(d, idx) {
   const planned = d.plannedWhen || d.when;
   const delayMin = d.delay ? Math.round(d.delay / 60) : 0;
@@ -401,7 +407,7 @@ function rowHtml(d, idx) {
   depByKey.set(d.key, d);
   const bell = session ? `<i class="bell ${tracked.has(d.key) ? 'on' : ''}" title="Fahrt im Telegram-Bot verfolgen">🔔</i>` : '';
   return `<div class="row ${d.cancelled ? 'cancel' : ''} ${session ? 'trackable' : ''}" data-idx="${idx}" data-key="${esc(d.key)}">
-    <div class="zeit"><b>${hhmm(planned)}${info}${vz}${bell}</b><small>${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
+    <div class="zeit"><b>${zeitHtml(planned, d.when, delayMin, d.cancelled)}${info}${vz}${bell}</b><small>${altHtml(planned, delayMin, d.cancelled)}${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
     <div class="nach">${esc(d.direction || '')}</div>
     <div class="ueber"><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span></div>
     <div class="gleis">${d.platform ? `<small>${platformLabel(d.mode)}</small>${esc(d.platform)}` : ''}</div>
@@ -742,7 +748,7 @@ function trackingHtml() {
     const art = w.mode_name ? w.mode_name + ' | ' : '';
     const status = stand ? `<span class="vz ${sev}" title="${w.cancelled ? '' : 'ca. ' + hhmm(w.eta * 1000)}">${esc(stand)}</span>` : '';
     return `<div class="row ${w.cancelled ? 'cancel' : ''}">
-      <div class="zeit"><b>${hhmm(w.planned * 1000)}${status}</b><small>${esc(art + w.line)}${dayTag(w.planned * 1000)}</small></div>
+      <div class="zeit"><b>${zeitHtml(w.planned * 1000, w.eta * 1000, delay, w.cancelled)}${status}</b><small>${altHtml(w.planned * 1000, delay, w.cancelled)}${esc(art + w.line)}${dayTag(w.planned * 1000)}</small></div>
       <div class="nach">${esc(w.dest)}<span class="sub">${esc(w.stop_name)}</span></div>
       <div class="ueber"><span class="mq"><span class="seg">${esc(w.via || '')}<i class="end">+++</i></span></span></div>
       <div class="gleis"><span class="gl">${w.platform ? `<small>${esc(w.platform_label || 'Gleis')}</small>${esc(w.platform)}` : ''}</span><button class="untrack" data-key="${esc(w.key)}" title="Tracking beenden" aria-label="Tracking beenden">✕</button></div>
