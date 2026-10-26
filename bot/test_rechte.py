@@ -515,6 +515,31 @@ def test_clear_befehl():
     pruefe(sum(1 for _, p in aufrufe if p["chat_id"] == MITGLIED) == 3, "/clear ist nicht auf 3 Aufrufe pro Minute begrenzt")
 
 
+def test_tracking_zeigt_gleis_und_ueber():
+    neu()
+    bot.save = lambda: None
+    bot.send_first_status = lambda cid, w: None
+    token = "t" * 20
+    bot.data["sessions"][bot.token_hash(token)] = {"cid": MITGLIED, "exp": 9e12}
+    auth = "Bearer " + token
+    basis = {"key": "k1", "stop": "s1", "stop_name": "Bocholt Bahnhof", "line": "RE19", "dest": "Duesseldorf",
+             "kind": "bahn", "planned": 9e11}
+    voll = dict(basis, platform="3", platform_label="Gleis", via="Wesel, Oberhausen", mode_name="Zug")
+    bot.web_route("POST", "/trips", {}, voll, auth)
+    bot.web_route("POST", "/trips", {}, dict(basis, key="k2", platform_label="Steig<b>"), auth)
+    _, antwort = bot.web_route("GET", "/trips", {}, {}, auth)
+    nach_key = {t["key"]: t for t in antwort["trips"]}
+    pruefe(nach_key["k1"]["platform"] == "3" and nach_key["k1"]["via"] == "Wesel, Oberhausen", "Gleis oder Ueber fehlt in der Tracking-Antwort")
+    pruefe(nach_key["k1"]["platform_label"] == "Gleis" and nach_key["k1"]["mode_name"] == "Zug", "Gleis/Steig-Beschriftung oder Art fehlt")
+    pruefe(nach_key["k2"]["platform"] == "" and nach_key["k2"]["via"] == "", "Fahrt ohne Gleis und Ueber wird nicht leer geliefert")
+    pruefe(nach_key["k2"]["platform_label"] == "Gleis", "unbekannte Beschriftung wurde uebernommen")
+    try:
+        bot.web_route("POST", "/trips", {}, dict(basis, key="k3", via="x" * 401), auth)
+        pruefe(False, "zu langer Ueber-Text wurde akzeptiert")
+    except ValueError:
+        pass
+
+
 if __name__ == "__main__":
     for name, fn in sorted((n, f) for n, f in globals().items() if n.startswith("test_") and callable(f)):
         fn()

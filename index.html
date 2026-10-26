@@ -115,7 +115,8 @@
   .modal .alnote { margin: 0 0 6px; font-size: 13px; opacity: .8; }
   .modal .altext a { color: var(--accent); }
   .sub { display: block; font-size: 14px; font-weight: normal; line-height: 20px; opacity: .75; }
-  .untrack { background: none; border: 1px solid currentColor; color: inherit; border-radius: 8px; font-size: 16px; padding: 2px 9px; }
+  .untrack { background: none; border: 1px solid currentColor; color: inherit; border-radius: 8px; font-size: 16px; padding: 2px 9px; display: block; margin: 6px 0 0 auto; line-height: 18px; }
+  .mstat { display: none; }
   .favitem.plain { cursor: default; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
   .modal.hidden { display: none; }
@@ -206,6 +207,7 @@
   @media (max-width: 700px) {
     .cols, .row { grid-template-columns: 112px 1fr 68px; }
     .cols div:nth-child(3), .ueber { display: none; }
+    .mstat { display: block; }
     .cols .gh { font-size: 11px; line-height: 12px; }
     .cols { font-size: 22px; height: 40px; } .zeit b { font-size: 24px; line-height: 30px; } .zeit small { font-size: 12px; }
     .nach { font-size: 19px; line-height: 24px; } .gleis { font-size: 22px; }
@@ -478,6 +480,7 @@ async function renderBoards() {
   }
   if (view === 'tracking') {
     $('#out').innerHTML = trackingHtml();
+    marqueeAll();
     return;
   }
   if (view === 'favs' && !favSel) {
@@ -698,7 +701,9 @@ async function toggleTrack(row) {
     if (on) {
       await bot('POST', '/trips', {
         key: d.key, stop: d.stop.id, stop_name: d.stop.name, line: d.line?.name || '?',
-        dest: d.direction || '–', kind: kind(d), planned: Date.parse(d.plannedWhen) / 1000
+        dest: d.direction || '–', kind: kind(d), planned: Date.parse(d.plannedWhen) / 1000,
+        platform: d.platform || '', platform_label: platformLabel(d.mode),
+        via: viaCache.get(d.tripId) || '', mode_name: modeName(d.mode)
       });
     } else {
       await bot('DELETE', '/trips?key=' + encodeURIComponent(d.key));
@@ -724,17 +729,19 @@ function trackingHtml() {
     const delay = Math.round((w.eta - w.planned) / 60);
     const stand = w.cancelled ? 'Fahrt fällt aus' : delay >= 1 ? `+${delay} min · ca. ${hhmm(w.eta * 1000)}` : 'pünktlich';
     const sev = w.cancelled || delay >= 15 ? 'red' : delay >= 5 ? 'orange' : '';
+    const art = w.mode_name ? w.mode_name + ' | ' : '';
+    const status = stand === 'pünktlich' ? '' : `<span class="status ${sev}">${esc(stand)}</span>`;
     return `<div class="row ${w.cancelled ? 'cancel' : ''}">
-      <div class="zeit"><b>${hhmm(w.planned * 1000)}</b><small>${esc(w.line)}</small></div>
-      <div class="nach">${esc(w.dest)}<span class="sub">${esc(w.stop_name)}</span></div>
-      <div class="ueber"><span class="status ${sev}">${esc(stand)}</span></div>
-      <div class="gleis"><button class="untrack" data-key="${esc(w.key)}" title="Tracking beenden">✕</button></div>
+      <div class="zeit"><b>${hhmm(w.planned * 1000)}</b><small>${esc(art + w.line)}${dayTag(w.planned * 1000)}</small></div>
+      <div class="nach">${esc(w.dest)}<span class="sub">${esc(w.stop_name)}</span>${status ? `<span class="mstat">${status}</span>` : ''}</div>
+      <div class="ueber"><span class="mq"><span class="seg">${esc(w.via || '')}<i class="end">+++</i></span></span>${status}</div>
+      <div class="gleis">${w.platform ? `<small>${esc(w.platform_label || 'Gleis')}</small>${esc(w.platform)}` : ''}<button class="untrack" data-key="${esc(w.key)}" title="Tracking beenden">✕</button></div>
     </div>`;
   }).join('');
   const rep = routines.map(r =>
     `<div class="favitem plain">🔁 ${esc(r.hhmm)} ${esc(r.line)} → ${esc(r.dest)} · ${esc(r.days)}</div>`).join('');
   return `<div class="favlist">
-    <div class="cols" style="grid-template-columns:1fr"><div>🔔 Verfolgte Fahrten</div></div>${rows || '<div class="msg">Keine einzelnen Fahrten.</div>'}
+    <div class="cols"><div>Zeit</div><div>Nach</div><div>Über</div><div class="gh">Gleis/Steig</div></div>${rows || '<div class="msg">Keine einzelnen Fahrten.</div>'}
     ${rep ? '<div class="cols" style="grid-template-columns:1fr"><div>🔁 Wiederkehrend (im Bot einrichten)</div></div>' + rep : ''}
   </div>`;
 }

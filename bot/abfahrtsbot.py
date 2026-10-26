@@ -1758,6 +1758,13 @@ def clean_str(v, limit=200):
     return v
 
 
+def opt_str(v, limit=200):
+    """Optionaler Text: fehlt er, kommt ein leerer Text zurueck."""
+    if v in (None, ""):
+        return ""
+    return clean_str(v, limit)
+
+
 def web_favs(chat):
     return [{"id": f["id"], "name": f["name"]} for f in chat["favs"]]
 
@@ -1775,7 +1782,9 @@ def web_trips(cid, chat):
         st = state.get("w_" + str(w["wid"]), {})
         trips.append({"key": w["key"], "stop_name": w["stop_name"], "line": w["line"], "dest": w["dest"],
                       "kind": w["kind"], "planned": w["planned"], "eta": st.get("eta") or w["planned"],
-                      "cancelled": bool(st.get("cancelled"))})
+                      "cancelled": bool(st.get("cancelled")), "platform": w.get("platform", ""),
+                      "platform_label": w.get("platform_label", ""), "via": w.get("via", ""),
+                      "mode_name": w.get("mode_name", "")})
     routines = [{"line": r["line"], "dest": r["dest"], "stop_name": r["stop_name"], "hhmm": r["hhmm"],
                  "days": days_label(r["days"])} for r in chat["routines"]]
     return {"trips": sorted(trips, key=lambda t: t["planned"]), "routines": routines}
@@ -1825,7 +1834,10 @@ def web_route(method, path, q, body, auth, meta=None):
         if method == "POST":
             w = {"key": clean_str(body.get("key"), 400), "stop": clean_str(body.get("stop"), 400),
                  "stop_name": clean_str(body.get("stop_name")), "line": clean_str(body.get("line")),
-                 "dest": clean_str(body.get("dest")), "kind": body.get("kind"), "planned": body.get("planned")}
+                 "dest": clean_str(body.get("dest")), "kind": body.get("kind"), "planned": body.get("planned"),
+                 "platform": opt_str(body.get("platform"), 40), "via": opt_str(body.get("via"), 400),
+                 "mode_name": opt_str(body.get("mode_name"), 40)}
+            w["platform_label"] = "Steig" if body.get("platform_label") == "Steig" else "Gleis"
             if w["kind"] not in ("bus", "bahn") or not isinstance(w["planned"], (int, float)):
                 raise ValueError("ungültige Eingabe")
             w["wid"] = short_id(w["key"])
