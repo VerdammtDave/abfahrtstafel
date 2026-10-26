@@ -147,6 +147,8 @@
   .modal .card button.danger { color: #ff6b61; border-color: currentColor; }
   .modal .card button.hammer { background: #d92d20; color: #fff; border-color: #d92d20; font-weight: 700; }
   .modal .card button.hammer:hover { background: #b42318; }
+  .modal .card button.hammer { min-width: 40px; padding: 6px 10px; font-size: 16px; line-height: 1; }
+  .modal .card button.hammer.sure { box-shadow: 0 0 0 3px rgba(217,45,32,.45); transform: scale(1.1); }
   .modal .card button:disabled { opacity: .5; }
   .memrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line, rgba(255,255,255,.12)); flex-wrap: wrap; }
   .memrow .role { display: block; font-size: 12.5px; opacity: .7; }
@@ -351,6 +353,8 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.6.1', date: '26.10.2026', items: [
+    'Der Rauswerfen-Knopf zeigt nur noch den roten Hammer' ] },
   { v: '1.6.0', date: '26.10.2026', items: [
     'Rollen: Admin (darf einladen und Mitglieder rauswerfen) und Mitglied (nutzt nur den Bot). Es gibt genau einen Besitzer',
     'In der Mitgliederverwaltung steht jetzt, wer wen eingeladen hat',
@@ -884,7 +888,7 @@ function renderMembers() {
   const rows = d.members.filter(m => !q || (m.name + ' ' + m.role).toLowerCase().includes(q)).map(m =>
     `<div class="memrow"><div><b>${esc(m.name)}</b><span class="role">${esc(m.role)}${m.invited_by ? ' · eingeladen von ' + esc(m.invited_by) : ''}</span></div>${m.removable || m.can_role
       ? `<div class="memact">${m.can_role ? `<button type="button" data-act="role" data-ref="${esc(m.ref)}" data-role="${m.role === 'Admin' ? 'mitglied' : 'admin'}">${m.role === 'Admin' ? 'Zum Mitglied machen' : 'Zum Admin machen'}</button>` : ''}
-         ${m.removable ? `<button type="button" class="hammer" data-act="remove" data-ref="${esc(m.ref)}" aria-label="${esc(m.name)} rauswerfen">🔨 Rauswerfen</button>` : ''}</div>` : ''}</div>`).join('') || '<p class="hint">Keine Treffer.</p>';
+         ${m.removable ? `<button type="button" class="hammer" data-act="remove" data-ref="${esc(m.ref)}" data-name="${esc(m.name)}" title="Rauswerfen" aria-label="${esc(m.name)} rauswerfen">🔨</button>` : ''}</div>` : ''}</div>`).join('') || '<p class="hint">Keine Treffer.</p>';
   const inv = d.invites.map(i => `<div class="memrow"><div><code>/code ${esc(i.code)}</code><span class="role">von ${esc(i.by)} · gültig bis ${when(i.expires)}</span></div>
     <div class="memact"><button type="button" data-act="copy" data-code="${esc(i.code)}">Kopieren</button><button type="button" data-act="revoke" data-code="${esc(i.code)}">Widerrufen</button></div></div>`).join('')
     || '<p class="hint">Keine offenen Einladungen.</p>';
@@ -908,8 +912,9 @@ document.addEventListener('click', async e => {
   }
   if (act === 'remove' && b.dataset.sure !== '1') {               // erst nachfragen, dann entfernen
     b.dataset.sure = '1';
-    b.textContent = '🔨 Wirklich rauswerfen?';
-    setTimeout(() => { if (b.isConnected) { b.dataset.sure = ''; b.textContent = '🔨 Rauswerfen'; } }, 4000);
+    b.classList.add('sure');
+    say(`Noch einmal auf 🔨 klicken, um ${b.dataset.name} rauszuwerfen.`, 'warn');
+    setTimeout(() => { if (b.isConnected) { b.dataset.sure = ''; b.classList.remove('sure'); } }, 4000);
     return;
   }
   b.disabled = true;
