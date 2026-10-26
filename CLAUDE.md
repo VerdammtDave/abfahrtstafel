@@ -32,6 +32,7 @@ Der Kommentarblock "REGELN FUER SPAETERE AENDERUNGEN" steht in `bot/abfahrtsbot.
 ## Allgemeine Regeln
 
 - **Vor jedem Commit** `python3 bot/test_rechte.py` ausführen. Er muss bestehen. Zusätzlich `python3 -m py_compile bot/abfahrtsbot.py`.
+- Bei jeder sichtbaren Änderung an der Website einen Eintrag oben in `UPDATES` in `index.html` ergänzen (neue Versionsnummer, Datum, kurze Stichpunkte in einfacher Sprache). Die Liste sehen nur angemeldete Nutzer.
 - Bei Sicherheitsfixes immer einen leicht verständlichen Bericht für das Team ohne Fachjargon anlegen.
 - `bot/config.json` und `bot/data.json` nie einchecken. Der Bot-Token gehört nie in das Repo, in Logs oder in Antworten.
 - Neue Befehle für Nutzer bekommen auch eine Taste (`MENU_BUTTONS`, `menu_keyboard`), aber nur für Rollen, die den Befehl nutzen dürfen. Der Test prüft, dass keine Taste mehr zeigt, als erlaubt ist.
