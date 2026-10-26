@@ -32,6 +32,7 @@ command -v caddy >/dev/null || apt-get install -y -qq caddy
 if [ "$MODE" != bot ]; then
   mkdir -p "$WEBROOT"
   install -m 644 "$SRC/index.html" "$WEBROOT/index.html"
+  install -m 644 "$SRC/favicon.svg" "$WEBROOT/favicon.svg"
   if [ "$MODE" = web ]; then
     sed -i "s|^const BOT_API = '/api';|const BOT_API = '';|" "$WEBROOT/index.html"   # ohne Bot keine Anmeldung anzeigen
   fi
