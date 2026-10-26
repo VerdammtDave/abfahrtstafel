@@ -855,6 +855,11 @@ ADMIN_ACTIONS = {"mrm", "mr", "md", "mo", "mx", "mn", "mm"}                     
 MAX_OPEN_INVITES = 5                                      # offene Einladungscodes pro Admin
 OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung nur fuer den Besitzer (und den Verwalter)
 VERWALTER_COMMANDS = set()                                # Befehle rund um Server und Betrieb: NUR der Verwalter. Aktuell gibt es keine.
+BETRIEB_COMMANDS = {"/restart"}                           # einzige Betriebsfunktion fuer den Besitzer: nur Besitzer und Verwalter, sonst niemand
+BETRIEB_ACTIONS = {"rst"}                                 # Knoepfe dazu (Bestaetigung)
+RESTART_ASK_TTL = 120                                     # so lange gilt die Rueckfrage "Bot neu starten?"
+restart_pending = {}                                      # Chat -> Zeitpunkt der Rueckfrage, nur im Speicher
+poll_offset = 0                                           # letzter bestaetigter Telegram-Update-Stand
 INVITE_TTL = 24 * 3600                                    # Einladungscode gilt 24 h
 
 
@@ -878,7 +883,8 @@ def ist_besitzer(cid):
 #    Sperr-Funktionen lehnen seine ID serverseitig ab.
 # 4. Besitzer und Mitglieder bekommen keine Funktion, die Server, Konfiguration oder Betrieb betrifft (config.json,
 #    Umgebung, Token, Ports, Dateien, Dienste, Neustart, Befehle, Logs). Neue Befehle dieser Art kommen nur in
-#    VERWALTER_COMMANDS.
+#    VERWALTER_COMMANDS. Einzige Ausnahme, vom Betreiber ausdruecklich freigegeben: /restart fuer Besitzer und Verwalter
+#    (BETRIEB_COMMANDS, sonst niemand, mit Rueckfrage).
 # 5. Token, Verwalter-ID und Dateipfade erscheinen nie in Nachrichten, Fehlermeldungen oder API-Antworten.
 # 6. Der Bot nimmt dem Betreiber nie Daten oder Rechte weg. Er kann data.json und config.json immer bearbeiten.
 def is_verwalter(cid):
@@ -925,6 +931,8 @@ def may_use(cid, cmd=None, action=None):
     Verwaltung. Gaeste (Code einer geteilten Verbindung) nur Verbindungen ansehen und verfolgen."""
     if is_verwalter(cid):
         return True
+    if cmd in BETRIEB_COMMANDS or action in BETRIEB_ACTIONS:
+        return ist_besitzer(cid)                           # Admins, Mitglieder und Gaeste nie (der Verwalter ist oben schon durch)
     if is_owner(cid) or (cid in data["admins"] and cid in data["members"]):
         return cmd not in VERWALTER_COMMANDS if cmd else True
     if cid in data["members"]:
@@ -938,7 +946,7 @@ def may_use(cid, cmd=None, action=None):
 MENU_BUTTONS = {
     "⭐ Favoriten": "/favoriten", "🔍 Suche": "/suche", "🚏 Abfahrten": "/abfahrten", "⏱ Verspätungen": "/jetzt",
     "📌 Verfolgte Fahrten": "/tracking", "🔁 Wiederkehrend": "/wiederkehrend", "🔕 Meldungen aus": "/pause",
-    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🛠 Einstellungen": "/einstellungen", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder",
+    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🛠 Einstellungen": "/einstellungen", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder", "🔄 Neustart": "/restart",
     "🔑 Einladen": "/code", "🎟 Code eingeben": "/code", "❓ Hilfe": "/hilfe", "🙈 Ausblenden": "/menueaus",
 }
 # Tasten, nach denen der Bot erst noch einen Text braucht (Name der Haltestelle, Code)
@@ -956,7 +964,7 @@ def menu_keyboard(cid):
         rows = [["⭐ Favoriten", "🔍 Suche"], ["🚏 Abfahrten", "⏱ Verspätungen"],
                 ["📌 Verfolgte Fahrten", "🔁 Wiederkehrend"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
                 ["⚙️ Status", "🛠 Einstellungen"], ["🕒 Auto-Löschen", "🧹 Chat löschen"], ["🎟 Code eingeben"]]
-        extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_manager(cid) else [])
+        extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_manager(cid) else []) + (["🔄 Neustart"] if is_admin(cid) else [])
         if extra:
             rows.append(extra)
         rows.append(["❓ Hilfe", "🙈 Ausblenden"])
@@ -977,7 +985,10 @@ def cmd_menue_aus(cid):
 
 
 def cmd_help(cid):
-    send(cid, HELP if is_manager(cid) else GUEST_HELP, reply_markup=menu_keyboard(cid))
+    text = HELP if is_manager(cid) else GUEST_HELP
+    if is_admin(cid):
+        text += "\n/restart \u2013 Bot neu starten (nur Besitzer und Verwalter)"
+    send(cid, text, reply_markup=menu_keyboard(cid))
 
 
 CLEAR_BATCH = 100                  # deleteMessages nimmt höchstens 100 Nachrichten auf einmal
@@ -1186,6 +1197,53 @@ def handle_setting_input(cid, ask_cmd, text, fresh):
     send(cid, "✅ Gespeichert.\n\n" + view, reply_markup=kb)
 
 
+# ---------- Neustart (/restart) ----------
+# Einzige Betriebsfunktion ausser dem Verwalter: Besitzer und Verwalter duerfen den Bot neu starten lassen.
+# Der Bot beendet sich, Docker (restart: unless-stopped) oder systemd (Restart=always) starten ihn wieder.
+
+def cmd_restart(cid):
+    with lock:
+        if not may_use(cid, cmd="/restart"):
+            return
+        restart_pending[cid] = time.time()
+    send(cid, "\U0001f504 Bot neu starten?\n\nEr ist danach etwa eine halbe Minute nicht erreichbar. Favoriten, verfolgte Fahrten und Einstellungen bleiben.",
+         reply_markup={"inline_keyboard": [[{"text": "✅ Ja, neu starten", "callback_data": "rst:1"}, {"text": "Abbrechen", "callback_data": "rst:0"}]]})
+
+
+def restart_now():
+    """Daten sichern, offene Telegram-Updates bestaetigen (sonst kaeme dieselbe Taste nach dem Start noch einmal) und beenden."""
+    try:
+        with msg_lock:
+            stand = {str(c): [list(e) for e in l] for c, l in msg_log.items()}
+        with lock:
+            data["msglog"] = stand
+            save()
+        if poll_offset:
+            tg("getUpdates", offset=poll_offset, timeout=0)
+    except Exception as e:
+        log("Vor dem Neustart:", e)
+    log("Neustart auf Wunsch")
+    os._exit(0)
+
+
+def schedule_restart():
+    threading.Timer(1.5, restart_now).start()               # kurz warten, damit die Antwort an Telegram noch rausgeht
+
+
+def handle_restart_callback(cb, cid, mid, wert):
+    with lock:
+        if not may_use(cid, action="rst"):                   # serverseitig, nicht nur wegen des Knopfes
+            return
+        seit = restart_pending.pop(cid, 0)
+        los = wert == "1" and time.time() - seit < RESTART_ASK_TTL
+    if los:
+        answer_cb(cb, "Neustart")
+        edit_or_log(cid, mid, "\U0001f504 Der Bot startet neu und ist gleich wieder da.")
+        return schedule_restart()
+    answer_cb(cb, "Abgebrochen" if wert != "1" else "Abgelaufen")
+    edit_or_log(cid, mid, "Neustart abgebrochen." if wert != "1" else "Die Rückfrage ist abgelaufen. /restart fragt neu.")
+
+
 def autoclear_step():
     """Nachrichten loeschen, die aelter als die Einstellung des Chats sind (Standard 47 Stunden), und das Protokoll sichern.
     Die Grenze wird bei jedem Durchlauf neu gelesen, eine geaenderte Einstellung gilt deshalb sofort fuer alle gemerkten Nachrichten."""
@@ -1290,6 +1348,7 @@ def handle_message(m):
         "/code": lambda: cmd_code(cid, arg, m.get("from")),
         "/mitglieder": lambda: cmd_mitglieder(cid),
         "/einstellungen": lambda: cmd_einstellungen(cid),
+        "/restart": lambda: cmd_restart(cid),
         "/suche": lambda: cmd_suche(cid, arg),
         "/favoriten": lambda: cmd_favoriten(cid),
         "/jetzt": lambda: cmd_jetzt(cid),
@@ -1939,6 +1998,8 @@ def handle_callback(cb):
         return handle_member_admin_callback(cb, cid, mid, action, sid)
     if action == "st":
         return handle_settings_callback(cb, cid, mid, sid)
+    if action in BETRIEB_ACTIONS:
+        return handle_restart_callback(cb, cid, mid, sid)
     if action == "ac":
         return handle_autoclear_callback(cb, cid, mid, sid)
     if action == "wl":
@@ -2092,6 +2153,7 @@ def handle_update(u):
 
 
 def poll_loop():
+    global poll_offset
     offset = None
     while True:
         try:
@@ -2100,6 +2162,7 @@ def poll_loop():
                 params["offset"] = offset
             for u in tg("getUpdates", **params):
                 offset = u["update_id"] + 1
+                poll_offset = offset
                 threading.Thread(target=handle_update, args=(u,), daemon=True).start()
         except Exception as e:
             log("getUpdates fehlgeschlagen:", e)
@@ -2531,7 +2594,7 @@ def main():
     log("Verwalter gesetzt: " + ("ja" if cfg["verwalter_id"] else "nein"))     # nie die ID ausgeben
     if data["owner"] is None:
         log("WARNUNG: Kein Besitzer festgelegt. Wer dem Bot zuerst /start schreibt, wird Besitzer. BOT_OWNER_ID setzen!")
-    tg("setMyCommands", commands=[
+    cmds = [
         {"command": "suche", "description": "Haltestelle suchen"},
         {"command": "favoriten", "description": "Deine Haltestellen"},
         {"command": "jetzt", "description": "Aktuelle Versp\u00e4tungen"},
@@ -2547,7 +2610,13 @@ def main():
         {"command": "einstellungen", "description": "Name, Löschen, Erinnerungen"},
         {"command": "menue", "description": "Tasten-Menü anzeigen"},
         {"command": "status", "description": "Einstellungen"},
-    ])
+    ]
+    tg("setMyCommands", commands=cmds)
+    for boss in {data["owner"], cfg["verwalter_id"]} - {None, 0}:       # /restart steht nur in der Befehlsliste dieser beiden Chats
+        try:
+            tg("setMyCommands", commands=cmds + [{"command": "restart", "description": "Bot neu starten"}], scope={"type": "chat", "chat_id": boss})
+        except Exception as e:
+            log("Befehlsliste fuer Besitzer oder Verwalter nicht gesetzt:", e)
     if cfg["api_port"]:
         cfg["bot_username"] = cfg["bot_username"] or tg("getMe")["username"]
         start_api()

@@ -566,6 +566,66 @@ def test_tracking_zeigt_gleis_und_ueber():
         pass
 
 
+def test_restart_nur_besitzer_und_verwalter():
+    """/restart ist die einzige Betriebsfunktion fuer den Besitzer. Admins, Mitglieder, Gaeste und Fremde bekommen sie nie."""
+    neu()
+    admin = MITGLIED + 1
+    bot.data["members"].append(admin)
+    bot.data["admins"].append(admin)
+    erlaubt = {"Besitzer": BESITZER, "Verwalter": VERWALTER}
+    verboten = {"Admin": admin, "Mitglied": MITGLIED, "Gast": GAST, "Fremder": FREMD}
+    for name, cid in erlaubt.items():
+        pruefe(bot.may_use(cid, cmd="/restart") and bot.may_use(cid, action="rst"), f"{name} darf /restart nicht")
+        pruefe("🔄 Neustart" in tasten(cid), f"{name} sieht die Taste Neustart nicht")
+    for name, cid in verboten.items():
+        pruefe(not bot.may_use(cid, cmd="/restart") and not bot.may_use(cid, action="rst"), f"{name} darf /restart")
+        pruefe("🔄 Neustart" not in tasten(cid), f"{name} sieht die Taste Neustart")
+    gesendet, aufrufe, neustarts = [], [], []
+    bot.send = lambda cid, text, **k: gesendet.append((cid, str(text), k))
+    bot.tg = lambda methode, **p: aufrufe.append((methode, p))
+    bot.save = lambda: None
+    bot.schedule_restart = lambda: neustarts.append(1)
+    # Hilfe: nur Besitzer und Verwalter sehen /restart
+    for name, cid in {**erlaubt, **verboten}.items():
+        gesendet.clear()
+        bot.cmd_help(cid)
+        pruefe(("/restart" in gesendet[-1][1]) == (name in erlaubt), f"/hilfe zeigt /restart falsch fuer {name}")
+    # Befehl und Knopf: Unberechtigte loesen nichts aus, auch nicht mit nachgebauten Knoepfen
+    for name, cid in verboten.items():
+        gesendet.clear()
+        bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
+        pruefe(cid not in bot.restart_pending and not any("neu starten" in t for _, t, _ in gesendet), f"{name} bekommt die Rueckfrage")
+        bot.restart_pending[cid] = __import__("time").time()                      # selbst mit gesetzter Rueckfrage
+        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+        bot.restart_pending.pop(cid, None)
+    pruefe(not neustarts, "Unberechtigte konnten den Neustart ausloesen")
+    # Ablauf: ohne Rueckfrage nichts, mit Rueckfrage genau einmal, abbrechen und Ablauf zaehlen nicht
+    for cid in erlaubt.values():
+        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+        pruefe(not neustarts, "Neustart ohne vorherige Rueckfrage")
+        gesendet.clear()
+        bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
+        pruefe(any("neu starten" in t for _, t, _ in gesendet) and not neustarts, "Rueckfrage kommt nicht oder startet schon")
+        bot.handle_callback({"id": "x", "data": "rst:0", "message": {"chat": {"id": cid}, "message_id": 5}})
+        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+        pruefe(not neustarts, "Neustart nach Abbrechen")
+        bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
+        bot.restart_pending[cid] -= bot.RESTART_ASK_TTL + 5
+        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+        pruefe(not neustarts, "Neustart nach abgelaufener Rueckfrage")
+        bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
+        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+        pruefe(len(neustarts) == 1, "bestaetigter Neustart wird nicht ausgeloest")
+        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+        pruefe(len(neustarts) == 1, "dieselbe Bestaetigung loest zweimal aus")
+        neustarts.clear()
+    # Verwalter hat nie weniger Rechte als der Besitzer, kann den Besitzer aber nicht entfernen oder umbesetzen
+    for ziel in (BESITZER,):
+        bot.handle_member_admin_callback({"id": "x"}, VERWALTER, 1, "mrm", str(ziel))
+        bot.handle_member_admin_callback({"id": "x"}, VERWALTER, 1, "mr", f"{ziel}:a")
+    pruefe(bot.data["owner"] == BESITZER and bot.is_full(BESITZER) and BESITZER not in bot.data["admins"], "Verwalter konnte den Besitzer entfernen oder umbesetzen")
+
+
 if __name__ == "__main__":
     for name, fn in sorted((n, f) for n, f in globals().items() if n.startswith("test_") and callable(f)):
         fn()

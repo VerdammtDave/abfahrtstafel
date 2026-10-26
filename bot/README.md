@@ -36,6 +36,7 @@ dem Code, die nächste Nachricht ist die Antwort (wartet 5 Minuten). Ein Befehl 
 | `/menue` | Tasten-Menü wieder anzeigen. Die Taste "Ausblenden" blendet es aus, mit dem Tastatur-Symbol im Eingabefeld klappt man es ein und aus |
 | `/clear` | Chatverlauf löschen (Telegram erlaubt nur Nachrichten der letzten 48 Stunden). Favoriten und Tracking bleiben |
 | `/autoclear` | Nachrichten automatisch löschen, an oder aus (`/autoclear an`, `/autoclear aus`, oder über die Taste). Gilt ab dem Einschalten, die Zeit stellt man in `/einstellungen` ein (Standard 47 Stunden) |
+| `/restart` | Bot neu starten (nur Besitzer und Verwalter, sonst niemand sieht ihn). Fragt vorher nach. Der Bot beendet sich, Docker (`restart: unless-stopped`) oder systemd (`Restart=always`) starten ihn wieder |
 | `/einstellungen` | Menü mit Tasten: Anzeigename, automatisches Löschen (3 bis 47 Stunden) und die zwei Erinnerungen vor einer Fahrt. Gilt für alle, die den Bot nutzen dürfen, auch Gäste |
 | `/status` | Einstellungen und Zeit der letzten Prüfung |
 
@@ -140,6 +141,7 @@ Der Besitzer ist eine andere Person als der Verwalter und behält seine normalen
 | Einladungscodes erzeugen und widerrufen | ja | ja | nur als Admin (höchstens 5 offene Codes) | nein |
 | `/mitglieder`, Mitglieder rauswerfen | ja | ja | nur als Admin | nein |
 | Rollen vergeben (Admin oder Mitglied) | ja | ja | nein | nein |
+| Bot neu starten (`/restart`) | ja | ja | nein | nein |
 | Braucht eine Einladung | nein | nein | ja | ja |
 | Kann entfernt, gesperrt oder eingeschränkt werden | **nie** | nur durch den Betreiber am Server | durch Besitzer und Verwalter | durch Ablauf des Codes |
 | Server, Konfiguration, Token, Dienste, Logs | nur am Server selbst | nein | nein | nein |
@@ -166,7 +168,7 @@ Beim Start schreibt der Bot nur "Verwalter gesetzt: ja" oder "nein" ins Log, nie
 1. Der Verwalter wird ausschließlich über `VERWALTER_ID` (oder `verwalter_id`) bestimmt. Kein Befehl, Knopf oder API-Aufruf vergibt, ändert oder entzieht die Rolle, auch nicht der Besitzer. Nichts davon steht in `data.json`.
 2. Der Verwalter hat immer mindestens alle Rechte des Besitzers, auch bei künftigen Befehlen, Knöpfen und Web-API-Funktionen. Jede neue Rechteprüfung muss ihn einschließen (über `is_admin`, `is_full` und `may_use`, nie nur `is_owner`).
 3. Er kann nicht entfernt, gesperrt, pausiert, stummgeschaltet oder eingeschränkt werden. Entfernen- und Sperr-Funktionen lehnen seine ID serverseitig ab. Seine Website-Sitzungen werden nie beendet, wenn andere entfernt werden.
-4. Besitzer, Mitglieder und Gäste bekommen keine Funktion, die Server, Konfiguration oder Betrieb betrifft: kein Ändern von `config.json`, Umgebungsvariablen, `VERWALTER_ID`, Token, Ports, Dateien oder Diensten, kein Neustarten, Updaten oder Ausführen von Befehlen, kein Auslesen von Konfiguration, Token oder Logs. Neue Befehle dieser Art kommen nur in `VERWALTER_COMMANDS`.
+4. Besitzer, Mitglieder und Gäste bekommen keine Funktion, die Server, Konfiguration oder Betrieb betrifft: kein Ändern von `config.json`, Umgebungsvariablen, `VERWALTER_ID`, Token, Ports, Dateien oder Diensten, kein Neustarten, Updaten oder Ausführen von Befehlen, kein Auslesen von Konfiguration, Token oder Logs. Neue Befehle dieser Art kommen nur in `VERWALTER_COMMANDS`. **Einzige Ausnahme, vom Betreiber ausdrücklich freigegeben:** `/restart` (Bot neu starten) für Besitzer und Verwalter, sonst niemand (`BETRIEB_COMMANDS`, mit Rückfrage, nicht in der Befehlsliste anderer). Alles andere bleibt dem Verwalter vorbehalten.
 5. Der Bot gibt Token, Verwalter-ID und Dateipfade nie in Nachrichten, Fehlermeldungen oder API-Antworten aus.
 6. Der Betreiber behält per Server immer die Kontrolle (`data.json` und `config.json` bearbeiten, Dienst neu starten). Der Bot nimmt ihm nie Daten oder Rechte weg.
 7. Alle Zugriffsprüfungen laufen serverseitig im Bot, nie allein auf Basis von Callback-Daten.
