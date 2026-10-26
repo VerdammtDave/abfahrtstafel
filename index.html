@@ -115,7 +115,8 @@
   .modal .alnote { margin: 0 0 6px; font-size: 13px; opacity: .8; }
   .modal .altext a { color: var(--accent); }
   .sub { display: block; font-size: 14px; font-weight: normal; line-height: 20px; opacity: .75; }
-  .untrack { background: none; border: 1px solid currentColor; color: inherit; border-radius: 8px; font-size: 16px; padding: 2px 9px; display: block; margin: 6px 0 0 auto; line-height: 18px; }
+  .untrack { background: none; border: 1px solid currentColor; color: inherit; border-radius: 8px; font-size: 12px; padding: 0 5px; margin-left: 8px; vertical-align: middle; line-height: 18px; opacity: .7; }
+  .untrack:hover, .untrack:focus-visible { opacity: 1; }
   .mstat { display: none; }
   .favitem.plain { cursor: default; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
@@ -732,10 +733,10 @@ function trackingHtml() {
     const art = w.mode_name ? w.mode_name + ' | ' : '';
     const status = stand === 'pünktlich' ? '' : `<span class="status ${sev}">${esc(stand)}</span>`;
     return `<div class="row ${w.cancelled ? 'cancel' : ''}">
-      <div class="zeit"><b>${hhmm(w.planned * 1000)}</b><small>${esc(art + w.line)}${dayTag(w.planned * 1000)}</small></div>
+      <div class="zeit"><b>${hhmm(w.planned * 1000)}<button class="untrack" data-key="${esc(w.key)}" title="Tracking beenden" aria-label="Tracking beenden">✕</button></b><small>${esc(art + w.line)}${dayTag(w.planned * 1000)}</small></div>
       <div class="nach">${esc(w.dest)}<span class="sub">${esc(w.stop_name)}</span>${status ? `<span class="mstat">${status}</span>` : ''}</div>
       <div class="ueber"><span class="mq"><span class="seg">${esc(w.via || '')}<i class="end">+++</i></span></span>${status}</div>
-      <div class="gleis">${w.platform ? `<small>${esc(w.platform_label || 'Gleis')}</small>${esc(w.platform)}` : ''}<button class="untrack" data-key="${esc(w.key)}" title="Tracking beenden">✕</button></div>
+      <div class="gleis">${w.platform ? `<small>${esc(w.platform_label || 'Gleis')}</small>${esc(w.platform)}` : ''}</div>
     </div>`;
   }).join('');
   const rep = routines.map(r =>
