@@ -63,8 +63,8 @@ def chat(cid):
 
 def test_name():
     neu()
-    s = bot.apply_settings(BESITZER, {"nick": "  Helmutm  "})
-    pruefe(s["nick"] == "Helmutm" and chat(BESITZER)["nick"] == "Helmutm", "Name wird nicht gespeichert")
+    s = bot.apply_settings(BESITZER, {"nick": "  Helmut  "})
+    pruefe(s["nick"] == "Helmut" and chat(BESITZER)["nick"] == "Helmut", "Name wird nicht gespeichert")
     s = bot.apply_settings(BESITZER, {"nick": "Davi"})
     pruefe(s["nick"] == "Davi", "Name laesst sich nicht aendern")
     s = bot.apply_settings(BESITZER, {"nick": None})
@@ -205,11 +205,11 @@ def test_personalisierte_nachricht():
     neu()
     d = punkt(15)
     pruefe(bot.fmt_trip("remind", d).startswith("⏰ Abfahrt in"), "ohne Namen hat sich der Text geaendert")
-    text = bot.fmt_trip("remind", d, nick="Helmutm")
-    pruefe("Hallo Helmutm" in text and "beginnt in" in text, f"Name fehlt in der Erinnerung: {text.splitlines()[0]}")
-    pruefe("Helmutm" not in bot.fmt_trip("change", d, 0, "Helmutm") and "Helmutm" not in bot.fmt_trip("cancel", d, nick="Helmutm"), "Name taucht in jeder Nachricht auf")
+    text = bot.fmt_trip("remind", d, nick="Helmut")
+    pruefe("Hallo Helmut" in text and "beginnt in" in text, f"Name fehlt in der Erinnerung: {text.splitlines()[0]}")
+    pruefe("Helmut" not in bot.fmt_trip("change", d, 0, "Helmut") and "Helmut" not in bot.fmt_trip("cancel", d, nick="Helmut"), "Name taucht in jeder Nachricht auf")
     # ueber check_trip: nur die erste Erinnerung nennt den Namen
-    bot.apply_settings(BESITZER, {"nick": "Helmutm", "remind_first": 30, "remind_second": 10})
+    bot.apply_settings(BESITZER, {"nick": "Helmut", "remind_first": 30, "remind_second": 10})
     c = bot.get_chat(BESITZER)
     w = {"wid": "w1", "key": "k", "stop": "s", "line": "S1", "stop_name": "Halt", "planned": time.time() + 3600}
     c["trips"].append(w)
@@ -219,7 +219,7 @@ def test_personalisierte_nachricht():
         d = punkt(minuten, jetzt=jetzt)
         d["key"] = "k"
         bot.check_trip(str(BESITZER), c, w, {"s": [d]}, jetzt, ausgang)
-    pruefe(len(ausgang) == 2 and "Helmutm" in ausgang[0][1] and "Helmutm" not in ausgang[1][1], "Anrede bei Erinnerung 1 und nicht bei 2 erwartet")
+    pruefe(len(ausgang) == 2 and "Helmut" in ausgang[0][1] and "Helmut" not in ausgang[1][1], "Anrede bei Erinnerung 1 und nicht bei 2 erwartet")
     bot.apply_settings(BESITZER, {"nick": None})
     c["trips"].append(w)
     bot.data["state"][str(BESITZER)].clear()
@@ -293,8 +293,8 @@ def test_telegram_eingabe():
         bot.handle_message({"chat": {"id": cid}, "text": text, "from": {"first_name": "T"}})
     knopf(BESITZER, "st:pn")
     pruefe(bot.awaiting.get(BESITZER, ("",))[0] == "/_name", "Name festlegen fragt nicht nach")
-    schreibe(BESITZER, "Helmutm")
-    pruefe(chat(BESITZER).get("nick") == "Helmutm" and BESITZER not in bot.awaiting, "Name per Text wird nicht gespeichert")
+    schreibe(BESITZER, "Helmut")
+    pruefe(chat(BESITZER).get("nick") == "Helmut" and BESITZER not in bot.awaiting, "Name per Text wird nicht gespeichert")
     knopf(BESITZER, "st:px")
     pruefe(not chat(BESITZER).get("nick"), "Name entfernen funktioniert nicht")
     # falsche Eingabe: erklaert, Frage bleibt offen, Abbrechen beendet sauber
@@ -358,11 +358,11 @@ def test_web_einstellungen():
     code, out = web("GET", "/settings", a)
     pruefe(code == 200 and out["autoclear"]["hours"] == 47 and out["remind"]["first"] == 15 and out["remind"]["second"] == 5 and out["nick"] == "", "Standardwerte der Website stimmen nicht")
     pruefe(out["admin"] is True and web("GET", "/settings", m)[1]["admin"] is False, "Admin-Kennzeichen falsch")
-    code, out = web("POST", "/settings", a, {"nick": "Helmutm", "autoclear_hours": 5, "remind_first": 30, "remind_second": 10, "autoclear_on": True})
-    pruefe(code == 200 and out["nick"] == "Helmutm" and out["autoclear"]["hours"] == 5 and out["autoclear"]["on"], "Speichern ueber die Website funktioniert nicht")
+    code, out = web("POST", "/settings", a, {"nick": "Helmut", "autoclear_hours": 5, "remind_first": 30, "remind_second": 10, "autoclear_on": True})
+    pruefe(code == 200 and out["nick"] == "Helmut" and out["autoclear"]["hours"] == 5 and out["autoclear"]["on"], "Speichern ueber die Website funktioniert nicht")
     # dieselben Werte in Telegram
     text, _ = bot.st_view(BESITZER, "m")
-    pruefe("Helmutm" in text and "5 Stunden" in text and "30 min und 10 min" in text, "Telegram zeigt die Werte der Website nicht")
+    pruefe("Helmut" in text and "5 Stunden" in text and "30 min und 10 min" in text, "Telegram zeigt die Werte der Website nicht")
     pruefe(bot.clear_hours(BESITZER) == 5 and bot.active_remind(chat(BESITZER)) == [30, 10], "Telegram nutzt die Werte der Website nicht")
     # und umgekehrt
     knopf(BESITZER, "st:ch:12")
@@ -372,12 +372,12 @@ def test_web_einstellungen():
     # Fehler: verstaendliche Meldung, nichts gespeichert, ein Fehler stoppt das ganze Paket
     code, out = web("POST", "/settings", a, {"nick": "Neu", "autoclear_hours": 2})
     pruefe(code == 400 and "3" in out["error"], "ungueltige Stunden werden serverseitig nicht abgelehnt")
-    pruefe(chat(BESITZER)["nick"] == "Helmutm", "bei einem Fehler wurde ein Teil trotzdem gespeichert")
+    pruefe(chat(BESITZER)["nick"] == "Helmut", "bei einem Fehler wurde ein Teil trotzdem gespeichert")
     code, out = web("POST", "/settings", a, {"remind_first": 5, "remind_second": 5})
     pruefe(code == 400 and chat(BESITZER)["remind"] == [60, 10], "gleiche Erinnerungszeiten werden akzeptiert")
     # nur eigene Einstellungen: cid, Rolle und Co. aus der Anfrage werden ignoriert
     code, _ = web("POST", "/settings", m, {"cid": BESITZER, "chat": BESITZER, "admin": True, "owner": MITGLIED, "nick": "Mitglied"})
-    pruefe(chat(BESITZER)["nick"] == "Helmutm" and chat(MITGLIED)["nick"] == "Mitglied", "Anfrage konnte fremde Einstellungen aendern")
+    pruefe(chat(BESITZER)["nick"] == "Helmut" and chat(MITGLIED)["nick"] == "Mitglied", "Anfrage konnte fremde Einstellungen aendern")
     pruefe(not bot.is_admin(MITGLIED) and bot.data["owner"] == BESITZER, "Anfrage konnte die Rolle aendern")
     pruefe(web("GET", "/settings", m)[1]["admin"] is False, "Mitglied wurde Admin")
 
@@ -493,7 +493,7 @@ def test_neustart_und_migration():
     neu()
     bot.cfg["data_file"] = "test_neustart.json"
     bot.save = ORIG_SAVE
-    bot.apply_settings(BESITZER, {"nick": "Helmutm", "autoclear_on": True, "autoclear_hours": 5, "remind_first": 30, "remind_second": 10})
+    bot.apply_settings(BESITZER, {"nick": "Helmut", "autoclear_on": True, "autoclear_hours": 5, "remind_first": 30, "remind_second": 10})
     bot.note_invite(BESITZER, "widerrufen")
     bot.save()
     bot.data.clear()
@@ -501,7 +501,7 @@ def test_neustart_und_migration():
     bot.load()
     bot.migrate()
     c = chat(BESITZER)
-    pruefe(c["nick"] == "Helmutm" and bot.clear_hours(BESITZER) == 5 and bot.active_remind(c) == [30, 10] and c["autoclear"], "Einstellungen ueberleben den Neustart nicht")
+    pruefe(c["nick"] == "Helmut" and bot.clear_hours(BESITZER) == 5 and bot.active_remind(c) == [30, 10] and c["autoclear"], "Einstellungen ueberleben den Neustart nicht")
     pruefe(bot.data["invite_hist"][-1]["status"] == "widerrufen", "Einladungsverlauf ueberlebt den Neustart nicht")
     # Alte Daten ohne neue Felder: Standardwerte, nichts geht verloren
     alt = {"favs": [{"sid": "a", "id": "b", "name": "c", "mode": "all", "seeded": False}], "threshold": 5, "paused": False, "autoclear": True,
@@ -532,7 +532,7 @@ def nick_von(cid):
 
 def test_keine_geheimnisse():
     neu()
-    bot.apply_settings(BESITZER, {"nick": "Helmutm"})
+    bot.apply_settings(BESITZER, {"nick": "Helmut"})
     ausgaben = []
     for ansicht in ("m", "p", "c", "r", "r1", "r2"):
         ausgaben.append(str(bot.st_view(BESITZER, ansicht)))

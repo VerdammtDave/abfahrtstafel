@@ -198,7 +198,7 @@ eine Änderung gilt also überall sofort. Jede Person ändert nur ihre eigenen W
 
 - Fehlt ein Feld, gilt der Standard. Bestehende Nutzer behalten dadurch ihr bisheriges Verhalten. `migrate()` läuft bei jedem Start, ist wiederholbar,
   ändert keine gültigen Daten und entfernt nur ungültige gespeicherte Werte.
-- Erinnerungen: Mit Namen lautet die erste „Hallo Helmutm, deine Fahrt beginnt in 15 min“, die zweite und alle anderen Meldungen bleiben neutral. Ohne Namen ändert sich nichts.
+- Erinnerungen: Mit Namen lautet die erste „Hallo Helmut, deine Fahrt beginnt in 15 min“, die zweite und alle anderen Meldungen bleiben neutral. Ohne Namen ändert sich nichts.
   Nach Abfahrtsbeginn kommt keine Erinnerung mehr. Ändert man die Zeiten bei einer laufenden Fahrt, gelten schon erreichte Zeitpunkte als erledigt (nichts kommt nachträglich oder doppelt).
 - Alles wird serverseitig geprüft (`apply_settings`, `check_hours`, `check_remind`, `check_nick`). Bei einem Fehler wird nichts gespeichert.
 

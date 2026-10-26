@@ -781,7 +781,7 @@ function settingsHtml(s) {
   return `<h3 class="alhead">Einstellungen</h3>
   <form id="setForm" novalidate>
     <section class="setsec"><h4>Persönliches Profil</h4>
-      <label class="fld">Anzeigename<input id="setNick" maxlength="30" value="${esc(s.nick)}" placeholder="z. B. Helmutm" autocomplete="off"></label>
+      <label class="fld">Anzeigename<input id="setNick" maxlength="30" value="${esc(s.nick)}" placeholder="z. B. Helmut" autocomplete="off"></label>
       <p class="hint">Mit diesem Namen spricht dich der Bot in Erinnerungen an. Leer lassen für neutrale Nachrichten.</p></section>
     <section class="setsec"><h4>Automatische Löschung</h4>
       <div class="setrow"><label class="sw"><input type="checkbox" id="acOn" ${a.on ? 'checked' : ''}> Nachrichten im Telegram-Chat automatisch löschen</label></div>
