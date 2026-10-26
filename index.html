@@ -44,7 +44,7 @@
   .bar .refresh:hover { box-shadow: 0 6px 20px var(--ring), inset 0 1px 0 rgba(255,255,255,.35); }
   .refresh:hover svg { transform: rotate(180deg); }
   .refresh:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
-  .refresh.loading svg { animation: spin .8s linear infinite; }
+  .refresh.loading svg { animation: spin .8s cubic-bezier(.45,0,.25,1) infinite; }
   #themes .ico { display: inline-block; }
   #themes .chip.active .ico { animation: icospin .7s cubic-bezier(.22,1,.36,1); }
   @keyframes icospin { 0% { transform: rotate(-200deg) scale(.4); opacity: 0; } 60% { transform: rotate(15deg) scale(1.25); opacity: 1; } 100% { transform: none; } }
@@ -465,6 +465,8 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.9.1', date: '26.10.2026', items: [
+    'Der Aktualisieren-Knopf dreht sich immer eine ganze Runde, auch wenn die Daten sofort da sind' ] },
   { v: '1.9.0', date: '26.10.2026', items: [
     'Überall einheitliche Symbole statt Emojis: Reiter, Glocke, Stern, Menü, Darstellung, Fenster-Kreuz, Hammer, Bus und Zug',
     'Bei Fahrten mit Echtzeitdaten steht „Live“ in der Haltliste und der nächste Halt pocht' ] },
@@ -793,7 +795,14 @@ let loads = 0;
 async function render() {
   $('#refresh').classList.add('loading');
   loads++;
-  try { await renderBoards(); } finally { if (--loads === 0) $('#refresh').classList.remove('loading'); }
+  try { await renderBoards(); } finally { if (--loads === 0) stopSpin(); }
+}
+
+// Das Symbol dreht sich immer mindestens eine ganze Runde, auch wenn die Daten schneller da sind.
+// Gestoppt wird erst am Ende einer Umdrehung, damit es nicht mitten in der Drehung abbricht.
+function stopSpin() {
+  const btn = $('#refresh');
+  btn.querySelector('svg').addEventListener('animationiteration', () => { if (loads === 0) btn.classList.remove('loading'); }, { once: true });
 }
 
 async function renderBoards() {
