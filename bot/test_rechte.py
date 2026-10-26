@@ -2,8 +2,7 @@
 """Rechtetest fuer den Bot. Nur Standardbibliothek. Ausfuehren: python3 bot/test_rechte.py
 
 Muss vor jedem Commit laufen. Der Test leitet Befehle und Knopf-Aktionen automatisch aus dem Code ab
-(HELP, Befehlsverteiler, Callback-Aktionen). Kommt eine neue Funktion dazu, die den Verwalter ausschliesst,
-schlaegt er fehl.
+(HELP, Befehlsverteiler, Callback-Aktionen) und prueft die Rollen Besitzer, Verwalter, Mitglied und Gast.
 """
 import ast
 import importlib.util
@@ -36,13 +35,12 @@ def pruefe(bedingung, text):
         print("FEHLER:", text)
 
 
-def neu(verwalter=VERWALTER):
-    """Frischer Zustand: Besitzer, ein Mitglied, ein Gast. Der Verwalter steht nirgends in den Daten."""
+def neu():
+    """Frischer Zustand: ein Besitzer, ein Verwalter, ein Mitglied, ein Gast."""
     bot.data.clear()
     bot.data.update({"owner": BESITZER, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {},
-                     "guests": [GAST], "shares": {}, "members": [MITGLIED], "invites": {}, "names": {},
-                     "sessions": {}, "admins": [], "msglog": {}})
-    bot.cfg["verwalter_id"] = verwalter
+                     "guests": [GAST], "shares": {}, "members": [VERWALTER, MITGLIED], "invites": {}, "names": {},
+                     "sessions": {}, "verwalter": [VERWALTER], "invited_by": {}, "msglog": {}})
 
 
 def befehle_und_aktionen():
@@ -63,156 +61,280 @@ def befehle_und_aktionen():
     for name in dir(bot):                             # Konstanten wie GUEST_ACTIONS, ROUTINE_ACTIONS, SHARE_ACTIONS
         if name.endswith("_ACTIONS"):
             aktionen |= set(getattr(bot, name))
-    befehle |= set(bot.OWNER_COMMANDS) | set(bot.VERWALTER_COMMANDS) | set(bot.GUEST_COMMANDS)
+    befehle |= set(bot.OWNER_COMMANDS) | set(bot.BETRIEB_COMMANDS) | set(bot.GUEST_COMMANDS)
     aktionen |= {"mrm", "wl"}
     return sorted(befehle), sorted(aktionen)
 
 
-def test_ohne_verwalter():
-    for wert in (None, "", "0", "abc", "1.5", "  ", True):
-        os.environ.pop("VERWALTER_ID", None)
-        if wert is not None:
-            os.environ["VERWALTER_ID"] = str(wert)
-        bot.cfg["verwalter_id"] = 0
-        bot.cfg["verwalter_id"] = bot.parse_id(os.environ.get("VERWALTER_ID") or 0)
-        neu(verwalter=bot.cfg["verwalter_id"])
-        pruefe(not bot.is_verwalter(VERWALTER), f"ohne gueltige VERWALTER_ID ({wert!r}) darf es keinen Verwalter geben")
-        pruefe(not bot.is_full(VERWALTER), "ohne Verwalter hat die ID keinen Zugriff")
-    os.environ.pop("VERWALTER_ID", None)
-    pruefe(bot.parse_id("123") == 123 and bot.parse_id(" -5 ") == -5, "gueltige Zahlen werden gelesen")
-    # Umgebungsvariable hat Vorrang vor config.json
-    os.environ["VERWALTER_ID"] = "777"
-    bot.HERE = tempfile.mkdtemp()
-    with open(os.path.join(bot.HERE, "config.json"), "w", encoding="utf-8") as f:
-        f.write('{"verwalter_id": 555}')
-    bot.load_config()
-    pruefe(bot.cfg["verwalter_id"] == 777, "VERWALTER_ID aus der Umgebung hat Vorrang vor config.json")
-    os.environ.pop("VERWALTER_ID", None)
-    bot.load_config()
-    pruefe(bot.cfg["verwalter_id"] == 555, "ohne Umgebungsvariable gilt verwalter_id aus config.json")
-    bot.HERE = tempfile.mkdtemp()
+GAST_BEFEHLE = {"/start", "/hilfe", "/help", "/code", "/tracking", "/menue", "/menueaus"}
+GAST_AKTIONEN = {"tw", "tr", "ud", "sr", "sf"}
 
 
-def test_zugriff_ohne_einladung():
+def rang_alle():
+    return {"Besitzer": BESITZER, "Verwalter": VERWALTER, "Mitglied": MITGLIED, "Gast": GAST, "Fremder": FREMD}
+
+
+def test_rollen_und_rang():
     neu()
-    pruefe(bot.is_verwalter(VERWALTER), "Verwalter wird erkannt")
-    pruefe(bot.is_full(VERWALTER) and bot.is_admin(VERWALTER), "Verwalter hat vollen Zugriff ohne Einladung")
-    pruefe(VERWALTER not in bot.data["members"], "Verwalter steht nicht in den Mitgliedern (nichts in data.json)")
-    pruefe(not bot.is_full(FREMD), "Fremde haben keinen Zugriff")
+    pruefe([bot.rang(c) for c in (BESITZER, VERWALTER, MITGLIED, GAST, FREMD)] == [4, 3, 2, 1, 0], "Rang der Rollen stimmt nicht")
+    pruefe(bot.is_manager(BESITZER) and bot.is_manager(VERWALTER) and not bot.is_manager(MITGLIED) and not bot.is_manager(GAST), "is_manager stimmt nicht")
+    pruefe(bot.is_full(BESITZER) and bot.is_full(VERWALTER) and bot.is_full(MITGLIED) and not bot.is_full(GAST) and not bot.is_full(FREMD), "is_full stimmt nicht")
+    # Verwalter-Eintrag ohne Mitgliedschaft zaehlt nicht
+    bot.data["verwalter"].append(FREMD)
+    pruefe(not bot.is_verwalter(FREMD) and bot.rang(FREMD) == 0, "ein Verwalter-Eintrag ohne Mitgliedschaft gibt Rechte")
+    # die alte Server-Rolle gibt es nicht mehr: eine Einstellung dafuer wird ignoriert
+    bot.cfg["verwalter_id"] = FREMD
+    pruefe(bot.rang(FREMD) == 0 and not bot.may_use(FREMD, cmd="/mitglieder"), "VERWALTER_ID gibt noch Rechte")
+    bot.cfg.pop("verwalter_id", None)
 
 
-def test_mindestens_besitzerrechte():
+def test_rechte_matrix():
+    """Befehle und Knoepfe werden aus dem Code abgeleitet, damit eine neue Funktion nicht unbemerkt zu viele Rechte bekommt."""
     neu()
     befehle, aktionen = befehle_und_aktionen()
     pruefe(len(befehle) >= 10 and len(aktionen) >= 10, f"Ableitung aus dem Code liefert zu wenig ({len(befehle)} Befehle, {len(aktionen)} Aktionen)")
     for b in befehle:
-        if bot.may_use(BESITZER, cmd=b):
-            pruefe(bot.may_use(VERWALTER, cmd=b), f"Verwalter darf Befehl {b} nicht, obwohl der Besitzer ihn darf")
-        pruefe(bot.may_use(VERWALTER, cmd=b), f"Verwalter darf Befehl {b} nicht")
+        pruefe(bot.may_use(BESITZER, cmd=b), f"Besitzer darf {b} nicht")
+        pruefe(bot.may_use(VERWALTER, cmd=b) == (b not in bot.BETRIEB_COMMANDS), f"Verwalter-Recht fuer {b} falsch")
+        pruefe(bot.may_use(MITGLIED, cmd=b) == (b not in bot.OWNER_COMMANDS | bot.BETRIEB_COMMANDS), f"Mitglied-Recht fuer {b} falsch")
+        pruefe(bot.may_use(GAST, cmd=b) == (b in GAST_BEFEHLE), f"Gast-Recht fuer {b} falsch")
+        pruefe(not bot.may_use(FREMD, cmd=b), f"Fremde duerfen {b}")
     for a in aktionen:
-        if bot.may_use(BESITZER, action=a):
-            pruefe(bot.may_use(VERWALTER, action=a), f"Verwalter darf Aktion {a} nicht, obwohl der Besitzer sie darf")
-        pruefe(bot.may_use(VERWALTER, action=a), f"Verwalter darf Aktion {a} nicht")
-    for b in bot.VERWALTER_COMMANDS:
-        pruefe(not bot.may_use(BESITZER, cmd=b), f"Besitzer darf den Verwalter-Befehl {b} nicht nutzen")
-        pruefe(not bot.may_use(MITGLIED, cmd=b), f"Mitglied darf den Verwalter-Befehl {b} nicht nutzen")
+        pruefe(bot.may_use(BESITZER, action=a), f"Besitzer darf Aktion {a} nicht")
+        pruefe(bot.may_use(VERWALTER, action=a) == (a not in bot.BETRIEB_ACTIONS), f"Verwalter-Recht fuer Aktion {a} falsch")
+        pruefe(bot.may_use(MITGLIED, action=a) == (a not in bot.ADMIN_ACTIONS | bot.BETRIEB_ACTIONS), f"Mitglied-Recht fuer Aktion {a} falsch")
+        pruefe(bot.may_use(GAST, action=a) == (a in GAST_AKTIONEN), f"Gast-Recht fuer Aktion {a} falsch")
+        pruefe(not bot.may_use(FREMD, action=a), f"Fremde duerfen Aktion {a}")
+    pruefe(set(bot.GUEST_COMMANDS) == GAST_BEFEHLE and set(bot.GUEST_ACTIONS) == GAST_AKTIONEN, "Gaeste duerfen mehr oder weniger als das Verfolgen")
+    pruefe(bot.BETRIEB_COMMANDS == {"/restart"} and not any(bot.may_use(c, cmd="/restart") for c in (VERWALTER, MITGLIED, GAST, FREMD)),
+           "/restart ist nicht auf den Besitzer beschraenkt")
+    pruefe(bot.OWNER_COMMANDS == {"/mitglieder"}, "unerwarteter Verwaltungsbefehl")
 
 
-def test_mitglieder_duerfen_nichts_verwalten():
+def test_nur_ein_besitzer():
     neu()
-    befehle, aktionen = befehle_und_aktionen()
-    for b in bot.OWNER_COMMANDS | bot.VERWALTER_COMMANDS:
-        pruefe(not bot.may_use(MITGLIED, cmd=b), f"Mitglied darf {b} nicht")
-        pruefe(not bot.may_use(GAST, cmd=b), f"Gast darf {b} nicht")
-        pruefe(not bot.may_use(FREMD, cmd=b), f"Fremde duerfen {b} nicht")
-    for a in bot.ADMIN_ACTIONS:
-        pruefe(not bot.may_use(MITGLIED, action=a), f"Mitglied darf die Verwaltungs-Aktion {a} nicht")
-        pruefe(not bot.may_use(GAST, action=a), f"Gast darf die Verwaltungs-Aktion {a} nicht")
-        pruefe(bot.may_use(BESITZER, action=a) and bot.may_use(VERWALTER, action=a), f"Besitzer oder Verwalter darf {a} nicht")
-    pruefe(not bot.is_admin(MITGLIED), "Mitglied ist kein Admin")
-    pruefe(bot.may_use(BESITZER, action="mrm"), "Besitzer darf Mitglieder entfernen")
-    for a in aktionen:
-        pruefe(not bot.may_use(FREMD, action=a), f"Fremde duerfen Aktion {a} nicht")
-
-
-def test_nicht_entfernbar():
-    neu()
-    bot.data["members"].append(VERWALTER)          # selbst wenn er zusaetzlich als Mitglied eingetragen waere
-    bot.data["names"][str(VERWALTER)] = "Betreiber"
-    bot.data["chats"][str(VERWALTER)] = {"favs": [], "trips": [], "routines": [], "paused": False}
-    gesendet = []
-    bot.tg = lambda methode, **p: gesendet.append((methode, p))
+    neu_gesendet = []
+    bot.send = lambda cid, text, **k: neu_gesendet.append(text)
+    bot.tg = lambda *a, **k: None
     bot.save = lambda: None
     karte = {"id": "x", "message": {"chat": {"id": BESITZER}, "message_id": 1}}
-    for wer in (BESITZER, VERWALTER):
-        bot.handle_member_admin_callback(karte, wer, 1, "mrm", str(VERWALTER))
-        pruefe(VERWALTER in bot.data["members"], f"Verwalter wurde von {wer} entfernt")
-        pruefe(str(VERWALTER) in bot.data["chats"], "Daten des Verwalters wurden geloescht")
-    bot.handle_member_admin_callback(karte, MITGLIED, 1, "mrm", str(VERWALTER))
-    pruefe(VERWALTER in bot.data["members"], "Mitglied konnte den Verwalter entfernen")
-    pruefe(bot.is_full(VERWALTER), "Verwalter hat nach Entfernversuchen keinen Zugriff mehr")
-    tasten = [k["callback_data"] for z in bot.members_keyboard()["inline_keyboard"] for k in z]
-    pruefe(f"mrm:{VERWALTER}" not in tasten, "in /mitglieder gibt es einen Entfernen-Knopf fuer den Verwalter")
-    # Mitglieder koennen nicht von Mitgliedern entfernt werden, aber vom Besitzer schon
-    bot.handle_member_admin_callback(karte, MITGLIED, 1, "mrm", str(MITGLIED))
-    pruefe(MITGLIED in bot.data["members"], "Mitglied konnte sich oder andere ohne Rechte entfernen")
-    bot.handle_member_admin_callback(karte, BESITZER, 1, "mrm", str(MITGLIED))
-    pruefe(MITGLIED not in bot.data["members"], "Besitzer kann Mitglieder nicht mehr entfernen")
-    # Sitzungen des Verwalters bleiben, wenn andere entfernt werden
+    for wer in (BESITZER, VERWALTER, MITGLIED):
+        for rolle in ("besitzer", "owner", "Besitzer", "verwalter", ""):
+            ok, _ = bot.set_role(wer, BESITZER, rolle)
+            pruefe(not ok, f"{wer} konnte die Rolle des Besitzers setzen ({rolle!r})")
+        for ziel in (VERWALTER, MITGLIED, GAST):
+            for rolle in ("besitzer", "owner", "admin", "x", None, 5):
+                ok, _ = bot.set_role(wer, ziel, rolle)
+                pruefe(not ok, f"Rolle {rolle!r} wurde vergeben")
+    pruefe(bot.data["owner"] == BESITZER and not any(bot.ist_besitzer(c) for c in (VERWALTER, MITGLIED, GAST, FREMD)), "es gibt mehr als einen Besitzer")
+    for wer in (BESITZER, VERWALTER, MITGLIED):
+        ok, _ = bot.remove_member(wer, BESITZER)
+        pruefe(not ok and bot.is_full(BESITZER) and bot.data["owner"] == BESITZER, f"{wer} konnte den Besitzer entfernen")
+    # niemand uebernimmt den Besitz ueber /start, solange es einen gibt
+    bot.cfg["owner_id"] = 0
+    bot.handle_message({"chat": {"id": FREMD}, "text": "/start", "from": {"first_name": "T"}})
+    pruefe(bot.data["owner"] == BESITZER and not bot.is_full(FREMD), "/start hat den Besitzer ersetzt")
+    # nur main() und /start setzen den Besitzer
+    baum = ast.parse(open(QUELLE, encoding="utf-8").read())
+    for fn in [n for n in ast.walk(baum) if isinstance(n, ast.FunctionDef)]:
+        for knoten in ast.walk(fn):
+            if isinstance(knoten, ast.Assign):
+                for z in knoten.targets:
+                    if ast.unparse(z) == "data['owner']" and fn.name not in ("handle_message", "main"):
+                        pruefe(False, f"{fn.name} setzt den Besitzer")
+
+
+def test_verwalter_grenzen():
     neu()
-    bot.data["sessions"] = {"a" * 64: {"cid": VERWALTER, "exp": 9e12}, "b" * 64: {"cid": MITGLIED, "exp": 9e12}}
-    bot.handle_member_admin_callback(karte, BESITZER, 1, "mrm", str(MITGLIED))
-    pruefe(("a" * 64) in bot.data["sessions"], "Sitzung des Verwalters wurde beendet")
-    pruefe(("b" * 64) not in bot.data["sessions"], "Sitzung des entfernten Mitglieds blieb bestehen")
+    bot.data["members"].append(VERWALTER + 1)
+    bot.data["verwalter"].append(VERWALTER + 1)                   # zweiter Verwalter
+    zweiter = VERWALTER + 1
+    bot.save = lambda: None
+    # Verwalter darf einladen, Mitglieder und Gaeste verwalten
+    code, _ = bot.make_invite(VERWALTER)
+    pruefe(code in bot.data["invites"], "Verwalter kann nicht einladen")
+    ok, _ = bot.set_role(VERWALTER, GAST, "mitglied")
+    pruefe(ok and GAST in bot.data["members"] and GAST not in bot.data["guests"], "Verwalter kann Gast nicht zum Mitglied machen")
+    ok, _ = bot.set_role(VERWALTER, GAST, "gast")
+    pruefe(ok and GAST in bot.data["guests"] and GAST not in bot.data["members"], "Verwalter kann Mitglied nicht zum Gast machen")
+    # aber nicht ernennen, nicht gleichrangige oder hoehere antasten
+    ok, _ = bot.set_role(VERWALTER, MITGLIED, "verwalter")
+    pruefe(not ok and MITGLIED not in bot.data["verwalter"], "Verwalter konnte jemanden zum Verwalter machen")
+    for ziel in (BESITZER, zweiter):
+        ok1, _ = bot.remove_member(VERWALTER, ziel)
+        ok2, _ = bot.set_role(VERWALTER, ziel, "mitglied")
+        ok3, _ = bot.set_role(VERWALTER, ziel, "gast")
+        pruefe(not (ok1 or ok2 or ok3) and bot.is_full(ziel), f"Verwalter konnte {ziel} entfernen oder aendern")
+    ok, _ = bot.remove_member(VERWALTER, VERWALTER)
+    pruefe(not ok, "Verwalter konnte sich selbst entfernen")
+    # Einladungen: eigene und die von Personen unter sich ja, die von Besitzer und Mitverwaltern nein
+    eigene, _ = bot.make_invite(VERWALTER)
+    vom_besitzer, _ = bot.make_invite(BESITZER)
+    vom_zweiten, _ = bot.make_invite(zweiter)
+    ok, _ = bot.revoke_invite(VERWALTER, vom_besitzer)
+    pruefe(not ok and vom_besitzer in bot.data["invites"], "Verwalter konnte eine Einladung des Besitzers widerrufen")
+    ok, _ = bot.revoke_invite(VERWALTER, vom_zweiten)
+    pruefe(not ok and vom_zweiten in bot.data["invites"], "Verwalter konnte eine Einladung eines anderen Verwalters widerrufen")
+    ok, _ = bot.revoke_invite(VERWALTER, eigene)
+    pruefe(ok and eigene not in bot.data["invites"], "Verwalter konnte die eigene Einladung nicht widerrufen")
+    # Mitglied entfernen: Verwalter ja
+    ok, _ = bot.remove_member(VERWALTER, MITGLIED)
+    pruefe(ok and MITGLIED not in bot.data["members"], "Verwalter konnte kein Mitglied entfernen")
+    # Besitzer darf alles darunter
+    ok, _ = bot.set_role(BESITZER, zweiter, "mitglied")
+    pruefe(ok and zweiter not in bot.data["verwalter"] and zweiter in bot.data["members"], "Besitzer konnte keinen Verwalter absetzen")
+    ok, _ = bot.set_role(BESITZER, zweiter, "verwalter")
+    pruefe(ok and bot.is_verwalter(zweiter), "Besitzer konnte keinen Verwalter ernennen")
+    neuer, _ = bot.make_invite(zweiter)
+    ok, _ = bot.revoke_invite(BESITZER, neuer)
+    pruefe(ok and neuer not in bot.data["invites"], "Besitzer konnte eine Einladung eines Verwalters nicht widerrufen")
+    ok, _ = bot.remove_member(BESITZER, zweiter)
+    pruefe(ok and bot.rang(zweiter) == 0, "Besitzer konnte keinen Verwalter entfernen")
+    pruefe(not any(i["by"] == zweiter for i in bot.data["invites"].values()), "Einladungen eines entfernten Verwalters blieben gueltig")
+    # Mitglieder und Gaeste koennen nichts davon
+    bot.data["members"].append(MITGLIED + 5)
+    for wer in (MITGLIED + 5, FREMD):
+        pruefe(not bot.can_invite(wer), f"{wer} darf einladen")
+        pruefe(not bot.set_role(wer, GAST, "mitglied")[0] and not bot.remove_member(wer, GAST)[0], f"{wer} konnte Rollen aendern")
+    # Verwalter-Rolle wird zurueckgenommen: Codes weg
+    bot.data["members"].append(zweiter)
+    bot.data["verwalter"].append(zweiter)
+    bot.make_invite(zweiter)
+    bot.set_role(BESITZER, zweiter, "mitglied")
+    pruefe(not any(i["by"] == zweiter for i in bot.data["invites"].values()), "Codes bleiben nach dem Absetzen gueltig")
+    # Limit offener Codes
+    bot.data["invites"].clear()
+    for _ in range(bot.MAX_OPEN_INVITES):
+        bot.make_invite(VERWALTER)
+    try:
+        bot.make_invite(VERWALTER)
+        pruefe(False, "Verwalter hat mehr als die erlaubten offenen Codes")
+    except ValueError:
+        pass
+
+
+def test_gast_nur_verfolgen():
+    neu()
+    nachrichten = []
+    bot.send = lambda cid, text, **k: nachrichten.append((cid, str(text)))
+    bot.tg = lambda *a, **k: None
+    bot.save = lambda: None
+    bot.fetch_departures = lambda *a, **k: []
+    for text in ("/suche Berlin", "/favoriten", "/abfahrten", "/jetzt", "/pause", "/weiter", "/status", "/clear", "/autoclear",
+                 "/einstellungen", "/wiederkehrend", "/mitglieder", "/restart"):
+        nachrichten.clear()
+        bot.handle_message({"chat": {"id": GAST}, "text": text, "from": {"first_name": "G"}})
+        pruefe(len(nachrichten) == 1 and "privater Bot" in nachrichten[0][1], f"Gast konnte {text} nutzen")
+    pruefe(not bot.data["chats"].get(str(GAST), {}).get("favs"), "Gast hat Favoriten bekommen")
+    for aktion in ("ac", "st", "sh", "add", "w", "fav", "mrm", "mn", "rst", "rep"):
+        pruefe(not bot.may_use(GAST, action=aktion), f"Gast darf Aktion {aktion}")
+    pruefe(bot.help_text(GAST) == bot.GUEST_HELP and "/suche" not in bot.GUEST_HELP, "Gast bekommt die falsche Hilfe")
+    pruefe([t for t in tasten(GAST)] == ["🎟 Code eingeben", "📌 Verfolgte Fahrten", "❓ Hilfe", "🙈 Ausblenden"], f"Tasten des Gastes: {tasten(GAST)}")
+    # Verbindung per /code ansehen und verfolgen: das darf er, mehr nicht
+    bot.data["shares"]["ABC234"] = {"w": {"wid": "w1", "key": "k", "stop": "s", "stop_name": "Halt", "line": "S1", "dest": "Ziel",
+                                           "kind": "bahn", "planned": 9e12}, "by": MITGLIED, "eta": 9e12}
+    nachrichten.clear()
+    bot.handle_message({"chat": {"id": FREMD}, "text": "/code ABC234", "from": {"first_name": "N"}})
+    pruefe(FREMD in bot.data["guests"] and FREMD not in bot.data["members"] and bot.rang(FREMD) == 1, "Code einer Verbindung macht nicht zum Gast")
+    bot.handle_callback({"id": "x", "data": "sf:ABC234", "message": {"chat": {"id": FREMD}, "message_id": 1}})
+    pruefe(any(t["key"] == "k" for t in bot.data["chats"][str(FREMD)]["trips"]), "Gast kann die Verbindung nicht verfolgen")
+    # kein Zugang zur Website
+    bot.data["sessions"][bot.token_hash("g")] = {"cid": GAST, "exp": 9e12}
+    pruefe(bot.web_route("GET", "/settings", {}, {}, "Bearer g")[0] == 401, "Gast hat Zugang zur Website-Anmeldung")
+    # ein Gast kann sich nicht selbst befoerdern
+    bot.handle_callback({"id": "x", "data": f"mr:{GAST}:v", "message": {"chat": {"id": GAST}, "message_id": 1}})
+    pruefe(bot.rang(GAST) == 1, "Gast hat sich befoerdert")
+    # Einladungscode einloesen macht ihn zum Mitglied
+    code, _ = bot.make_invite(VERWALTER)
+    bot.cmd_code(GAST, code, {"first_name": "G"})
+    pruefe(bot.rang(GAST) == 2 and GAST not in bot.data["guests"], "Gast wird per Einladung kein Mitglied")
+
+
+def test_hilfe_je_rolle():
+    neu()
+    h = {n: bot.help_text(c) for n, c in rang_alle().items()}
+    pruefe("/restart" in h["Besitzer"] and "/mitglieder" in h["Besitzer"], "Besitzer sieht nicht alle Befehle")
+    pruefe("/mitglieder" in h["Verwalter"] and "/restart" not in h["Verwalter"], "Verwalter sieht /restart oder nicht /mitglieder")
+    pruefe("/mitglieder" not in h["Mitglied"] and "/restart" not in h["Mitglied"] and "/suche" in h["Mitglied"], "Mitglied sieht Verwaltungsbefehle oder nicht die Bedienung")
+    pruefe(h["Gast"] == bot.GUEST_HELP, "Gast sieht nicht die Gast-Hilfe")
 
 
 def test_mitglieder_anzeige():
     neu()
     gesendet = []
-    bot.send = lambda cid, text, **k: gesendet.append(text)
+    bot.send = lambda cid, text, **k: gesendet.append((cid, text, k))
+    bot.data["names"] = {str(BESITZER): "Helmut", str(VERWALTER): "Vera", str(MITGLIED): "Mia", str(GAST): "Gero"}
+    bot.data["invited_by"] = {str(MITGLIED): VERWALTER}
     bot.cmd_mitglieder(BESITZER)
-    pruefe("Verwalter" in gesendet[-1], "/mitglieder markiert den Verwalter nicht")
-    pruefe(str(VERWALTER) not in gesendet[-1], "/mitglieder gibt die ID des Verwalters aus")
-    pruefe(bot.who(VERWALTER) == "Verwalter", "who() gibt die ID des Verwalters aus")
-    anzahl = len(gesendet)
+    text = gesendet[-1][1]
+    pruefe("Helmut (Besitzer)" in text and "Vera (Verwalter)" in text and "Mia · eingeladen von Vera" in text and "Gero (Gast)" in text, f"/mitglieder zeigt Rollen oder Einlader nicht: {text}")
+    daten = [k["callback_data"] for z in gesendet[-1][2]["reply_markup"]["inline_keyboard"] for k in z]
+    pruefe(f"mrm:{VERWALTER}" in daten and f"mrm:{MITGLIED}" in daten and f"mr:{GAST}" in daten, "Besitzer sieht nicht alle Knoepfe")
+    pruefe(f"mrm:{BESITZER}" not in daten, "es gibt einen Knopf zum Entfernen des Besitzers")
+    gesendet.clear()
+    bot.cmd_mitglieder(VERWALTER)
+    daten = [k["callback_data"] for z in gesendet[-1][2]["reply_markup"]["inline_keyboard"] for k in z]
+    pruefe(f"mrm:{MITGLIED}" in daten and f"mrm:{VERWALTER}" not in daten and f"mrm:{BESITZER}" not in daten, "Verwalter sieht Knoepfe fuer Besitzer oder sich selbst")
+    n = len(gesendet)
     bot.cmd_mitglieder(MITGLIED)
-    pruefe(len(gesendet) == anzahl, "Mitglied konnte /mitglieder aufrufen")
+    bot.cmd_mitglieder(GAST)
+    pruefe(len(gesendet) == n, "Mitglied oder Gast konnte /mitglieder aufrufen")
 
 
-def test_rolle_nicht_aenderbar():
-    """Keine Funktion setzt die Rolle. Es gibt auch keinen Eintrag dazu in den Daten."""
+def test_rollen_per_knopf():
+    neu()
+    aufrufe = []
+    bot.tg = lambda methode, **p: aufrufe.append((methode, p))
+    bot.send = lambda *a, **k: None
+    bot.save = lambda: None
+
+    def knopf(wer, aktion, rest):
+        aufrufe.clear()
+        bot.handle_member_admin_callback({"id": "x"}, wer, 1, aktion, rest)
+    knopf(BESITZER, "mr", str(MITGLIED))
+    pruefe(any("Rolle" in p.get("text", "") for m, p in aufrufe if m == "editMessageText"), "Rollenauswahl wird nicht gezeigt")
+    kb = [k["callback_data"] for m, p in aufrufe if m == "editMessageText" for z in p["reply_markup"]["inline_keyboard"] for k in z]
+    pruefe({f"mr:{MITGLIED}:v", f"mr:{MITGLIED}:m", f"mr:{MITGLIED}:g"} <= set(kb), f"Besitzer sieht nicht alle Rollen: {kb}")
+    knopf(VERWALTER, "mr", str(MITGLIED))
+    kb = [k["callback_data"] for m, p in aufrufe if m == "editMessageText" for z in p["reply_markup"]["inline_keyboard"] for k in z]
+    pruefe(f"mr:{MITGLIED}:v" not in kb and f"mr:{MITGLIED}:g" in kb, "Verwalter sieht die Rolle Verwalter zur Auswahl")
+    knopf(BESITZER, "mr", f"{MITGLIED}:v")
+    pruefe(bot.is_verwalter(MITGLIED), "Besitzer konnte per Knopf keinen Verwalter ernennen")
+    knopf(VERWALTER, "mr", f"{GAST}:m")
+    pruefe(GAST in bot.data["members"], "Verwalter konnte Gast nicht zum Mitglied machen")
+    knopf(VERWALTER, "mr", f"{MITGLIED}:g")
+    pruefe(bot.is_verwalter(MITGLIED), "Verwalter konnte einen anderen Verwalter zum Gast machen")
+    knopf(VERWALTER, "mrm", str(MITGLIED))
+    pruefe(MITGLIED in bot.data["members"], "Verwalter konnte einen anderen Verwalter entfernen")
+    for wer in (MITGLIED + 100, FREMD, GAST):
+        for aktion, rest in (("mr", f"{GAST}:m"), ("mrm", str(GAST)), ("mn", "0"), ("mo", "0")):
+            aufrufe.clear()
+            bot.handle_member_admin_callback({"id": "x"}, wer, 1, aktion, rest)
+            pruefe(not aufrufe, f"{wer} konnte {aktion} ausloesen")
+
+
+def test_rolle_nicht_ueber_daten():
+    """Die Rolle steht nur in data.json und wird nur ueber set_role, den Einladungscode und die Verbindungscodes geaendert."""
     baum = ast.parse(open(QUELLE, encoding="utf-8").read())
+    erlaubt = {"set_role", "remove_member", "cmd_code", "migrate", "load", "main"}
     for fn in [n for n in ast.walk(baum) if isinstance(n, ast.FunctionDef)]:
         for knoten in ast.walk(fn):
-            ziele = []
-            if isinstance(knoten, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
-                ziele = knoten.targets if isinstance(knoten, ast.Assign) else [knoten.target]
-            if isinstance(knoten, ast.Call) and isinstance(knoten.func, ast.Attribute) and knoten.func.attr in ("update", "setdefault", "pop"):
-                ziele = [knoten.func.value]
-            for z in ziele:
-                text = ast.unparse(z)
-                if "verwalter" in text.lower() and fn.name != "load_config":
-                    pruefe(False, f"{fn.name} veraendert die Verwalter-Rolle ({text})")
-    quelle = open(QUELLE, encoding="utf-8").read()
-    pruefe('data["verwalter' not in quelle and "data['verwalter" not in quelle, "Verwalter-Rolle wird in data gespeichert")
-    neu()
-    bot.cfg["verwalter_id"] = VERWALTER
-    for zustand in (bot.data,):
-        pruefe(not any("verwalter" in str(k).lower() for k in zustand), "data enthaelt einen Verwalter-Eintrag")
-        pruefe(str(VERWALTER) not in str(zustand), "die Verwalter-ID steht in data")
+            if isinstance(knoten, ast.Call) and isinstance(knoten.func, ast.Attribute) and knoten.func.attr in ("append", "remove", "extend", "insert"):
+                if ast.unparse(knoten.func.value) in ("data['verwalter']", "data['members']", "data['guests']") and fn.name not in erlaubt:
+                    pruefe(False, f"{fn.name} aendert eine Rollenliste ({ast.unparse(knoten.func.value)})")
 
 
 def test_keine_umgehung_der_pruefung():
-    """Neue Rechtepruefungen duerfen nicht nur den Besitzer meinen."""
+    """Rechte nie nur mit is_owner pruefen, sondern ueber may_use, is_manager oder rang."""
     baum = ast.parse(open(QUELLE, encoding="utf-8").read())
-    erlaubt = {"is_admin", "may_use", "ist_besitzer"}
+    erlaubt = {"ist_besitzer", "may_use"}
     for fn in [n for n in ast.walk(baum) if isinstance(n, ast.FunctionDef)]:
         for knoten in ast.walk(fn):
             if isinstance(knoten, ast.Call) and isinstance(knoten.func, ast.Name) and knoten.func.id == "is_owner" and fn.name not in erlaubt:
-                pruefe(False, f"{fn.name} prueft nur is_owner. Bitte is_admin nutzen, damit der Verwalter eingeschlossen ist")
+                pruefe(False, f"{fn.name} ruft is_owner auf. Bitte ist_besitzer, is_manager oder may_use nutzen")
             if isinstance(knoten, ast.Compare) and "data[\"owner\"]" in ast.unparse(knoten.left) \
                     and not all(isinstance(o, (ast.Is, ast.IsNot)) for o in knoten.ops) and fn.name != "is_owner":
-                pruefe(False, f"{fn.name} vergleicht data[\"owner\"] direkt. Bitte is_admin nutzen")
+                pruefe(False, f"{fn.name} vergleicht data[\"owner\"] direkt. Bitte ist_besitzer nutzen")
 
 
 def test_keine_geheimnisse_in_texten():
@@ -222,87 +344,35 @@ def test_keine_geheimnisse_in_texten():
     bot.send = lambda cid, text, **k: gesendet.append(str(text))
     bot.tg = lambda *a, **k: None
     bot.get_chat(BESITZER)
-    for cmd in ("/status", "/hilfe", "/mitglieder"):
+    for cmd in ("/status", "/hilfe", "/mitglieder", "/einstellungen"):
         bot.handle_message({"chat": {"id": BESITZER}, "text": cmd, "from": {"first_name": "Test"}})
     alles = "\n".join(gesendet)
     pruefe("GEHEIMER-TOKEN" not in alles, "der Token erscheint in einer Nachricht")
-    pruefe(str(VERWALTER) not in alles, "die Verwalter-ID erscheint in einer Nachricht")
     pruefe(HIER not in alles, "ein Dateipfad erscheint in einer Nachricht")
+    bot.cfg["bot_token"] = ""
 
 
-def test_admin_rolle():
-    """Rollen: Besitzer (genau einer), Verwalter, Admin (einladen und rauswerfen), Mitglied (nur den Bot nutzen)."""
+def test_einladung_vermerk():
     neu()
-    nachrichten, aufrufe = [], []
+    nachrichten = []
     bot.send = lambda cid, text, **k: nachrichten.append((cid, str(text)))
-    bot.tg = lambda methode, **p: aufrufe.append((methode, p))
+    bot.tg = lambda *a, **k: None
     bot.save = lambda: None
-    karte = {"id": "x", "message": {"chat": {"id": BESITZER}, "message_id": 1}}
-
-    def rolle(wer, ziel, r):
-        bot.handle_member_admin_callback(karte, wer, 1, "mr", f"{ziel}:{r}")
-    pruefe(not bot.can_invite(MITGLIED) and not bot.is_manager(MITGLIED), "Mitglied darf ohne Rolle einladen")
     bot.cmd_code(MITGLIED, "")
-    pruefe(not bot.data["invites"], "Mitglied ohne Rolle hat einen Einladungscode erzeugt")
-    # Rollen vergeben: nur Besitzer und Verwalter
-    for wer in (MITGLIED, GAST, FREMD):
-        rolle(wer, MITGLIED, "a")
-    pruefe(MITGLIED not in bot.data["admins"], "ohne Berechtigung konnte jemand die Admin-Rolle vergeben")
-    rolle(BESITZER, MITGLIED, "a")
-    pruefe(MITGLIED in bot.data["admins"] and bot.can_invite(MITGLIED) and bot.is_manager(MITGLIED), "Besitzer konnte die Admin-Rolle nicht vergeben")
-    pruefe(not bot.is_admin(MITGLIED), "Admin-Rolle macht zum Besitzer oder Verwalter")
-    pruefe(bot.may_use(MITGLIED, cmd="/mitglieder") and bot.may_use(MITGLIED, action="mrm"), "Admin darf Mitglieder nicht verwalten")
-    pruefe(all(not bot.may_use(MITGLIED, cmd=c) for c in bot.VERWALTER_COMMANDS), "Admin darf Verwalter-Befehle")
-    # ein Admin vergibt keine Rollen
-    zweiter = MITGLIED + 1
-    bot.data["members"].append(zweiter)
-    rolle(MITGLIED, zweiter, "a")
-    pruefe(zweiter not in bot.data["admins"], "Admin konnte die Admin-Rolle vergeben")
-    # Obergrenze offener Codes fuer Admins
-    for _ in range(10):
-        bot.cmd_code(MITGLIED, "")
-    pruefe(len(bot.data["invites"]) == bot.MAX_OPEN_INVITES and all(i["by"] == MITGLIED for i in bot.data["invites"].values()),
-           f"Admin hat {len(bot.data['invites'])} offene Codes statt {bot.MAX_OPEN_INVITES}")
-    # Einloesen: normales Mitglied, es wird festgehalten wer eingeladen hat, Besitzer erfaehrt es
+    pruefe(not bot.data["invites"], "ein Mitglied hat einen Einladungscode erzeugt")
+    bot.cmd_code(VERWALTER, "")
     code = next(iter(bot.data["invites"]))
+    pruefe(bot.data["invites"][code]["by"] == VERWALTER, "Verwalter erzeugt keinen Code")
     nachrichten.clear()
     bot.cmd_code(FREMD, code, {"first_name": "Neu"})
-    pruefe(FREMD in bot.data["members"] and FREMD not in bot.data["admins"] and not bot.is_manager(FREMD), "eingeladene Person ist kein normales Mitglied")
-    pruefe(bot.data["invited_by"].get(str(FREMD)) == MITGLIED, "es wird nicht festgehalten, wer eingeladen hat")
-    pruefe(bot.eingeladen_von(FREMD) == bot.who(MITGLIED), "eingeladen_von zeigt nicht den Einlader")
-    pruefe(any(c == BESITZER and "eingeladen" in t for c, t in nachrichten), "Besitzer erfaehrt nicht, wer ueber einen Admin kam")
-    pruefe(not any(str(VERWALTER) in t for _, t in nachrichten), "die Verwalter-ID steht in einer Nachricht")
-    # Verwalter, Besitzer und Nicht-Mitglieder bekommen keine Rolle
-    for ziel in (VERWALTER, BESITZER, GAST, FREMD + 9):
-        rolle(BESITZER, ziel, "a")
-    pruefe(not ({VERWALTER, BESITZER, GAST, FREMD + 9} & set(bot.data["admins"])), "Verwalter, Besitzer oder Nicht-Mitglied wurde Admin")
-    rolle(BESITZER, MITGLIED, "x")
-    pruefe(MITGLIED in bot.data["admins"], "unbekannte Rolle hat etwas veraendert")
-    # Es gibt genau einen Besitzer
-    pruefe(not any(bot.is_owner(c) for c in (MITGLIED, VERWALTER, GAST, FREMD, zweiter)), "es gibt mehr als einen Besitzer")
-    # Admins duerfen rauswerfen, aber nicht Besitzer und Verwalter
-    bot.data["members"].append(VERWALTER)
-    for ziel in (BESITZER, VERWALTER):
-        bot.handle_member_admin_callback(karte, MITGLIED, 1, "mrm", str(ziel))
-    pruefe(VERWALTER in bot.data["members"] and bot.data["owner"] == BESITZER and bot.is_full(BESITZER) and bot.is_full(VERWALTER), "Admin konnte Besitzer oder Verwalter entfernen")
-    bot.data["members"].remove(VERWALTER)
-    bot.handle_member_admin_callback(karte, MITGLIED, 1, "mrm", str(zweiter))
-    pruefe(zweiter not in bot.data["members"], "Admin konnte kein Mitglied rauswerfen")
-    bot.handle_member_admin_callback(karte, zweiter, 1, "mrm", str(FREMD))
-    pruefe(FREMD in bot.data["members"], "Mitglied konnte jemanden rauswerfen")
-    # Rolle entziehen loescht die offenen Codes
-    rolle(VERWALTER, MITGLIED, "m")
-    pruefe(MITGLIED not in bot.data["admins"] and not bot.can_invite(MITGLIED), "Rolle entziehen hat nicht funktioniert")
-    pruefe(not any(i["by"] == MITGLIED for i in bot.data["invites"].values()), "offene Codes blieben nach dem Entziehen gueltig")
-    # Entfernen loescht Rolle, Codes und den Einlader-Vermerk
-    rolle(BESITZER, MITGLIED, "a")
-    bot.cmd_code(MITGLIED, "")
-    bot.handle_member_admin_callback(karte, BESITZER, 1, "mrm", str(MITGLIED))
-    pruefe(MITGLIED not in bot.data["admins"] and not any(i["by"] == MITGLIED for i in bot.data["invites"].values()), "Entfernen laesst Admin-Rolle oder Codes zurueck")
-    pruefe(not bot.can_invite(MITGLIED), "entferntes Mitglied darf noch einladen")
-    bot.handle_member_admin_callback(karte, BESITZER, 1, "mrm", str(FREMD))
-    pruefe(str(FREMD) not in bot.data["invited_by"], "Einlader-Vermerk bleibt nach dem Entfernen stehen")
-    pruefe("verwalter" not in str(bot.data).lower(), "Rolle des Verwalters steht in data")
+    pruefe(bot.rang(FREMD) == 2 and not bot.is_manager(FREMD), "eingeladene Person ist kein normales Mitglied")
+    pruefe(bot.data["invited_by"].get(str(FREMD)) == VERWALTER and bot.eingeladen_von(FREMD) == bot.who(VERWALTER), "es wird nicht festgehalten, wer eingeladen hat")
+    pruefe(any(c == VERWALTER and "eingeloest" in t.replace("ö", "oe") for c, t in nachrichten), "der Einlader erfaehrt es nicht")
+    pruefe(any(c == BESITZER and "eingeladen" in t for c, t in nachrichten), "der Besitzer erfaehrt nicht, wer ueber einen Verwalter kam")
+    bot.cmd_code(MITGLIED + 7, code, {"first_name": "Zweiter"})
+    pruefe(bot.rang(MITGLIED + 7) == 0, "Einladung ist mehrfach einloesbar")
+    bot.remove_member(BESITZER, FREMD)
+    pruefe(str(FREMD) not in bot.data["invited_by"], "der Vermerk bleibt nach dem Entfernen stehen")
 
 
 def tasten(cid):
@@ -314,10 +384,7 @@ def test_menue_tasten_je_rolle():
     befehle, _ = befehle_und_aktionen()
     for text, cmd in bot.MENU_BUTTONS.items():
         pruefe(cmd in befehle, f"Taste {text} gehoert zu einem unbekannten Befehl {cmd}")
-    einlader = MITGLIED + 1
-    bot.data["members"].append(einlader)
-    bot.data["admins"].append(einlader)
-    rollen = {"Besitzer": BESITZER, "Verwalter": VERWALTER, "Mitglied": MITGLIED, "Admin": einlader, "Gast": GAST, "Fremder": FREMD}
+    rollen = {"Besitzer": BESITZER, "Verwalter": VERWALTER, "Mitglied": MITGLIED, "Gast": GAST, "Fremder": FREMD}
     for name, cid in rollen.items():
         for t in tasten(cid):
             pruefe(t in bot.MENU_BUTTONS, f"{name}: unbekannte Taste {t}")
@@ -327,7 +394,7 @@ def test_menue_tasten_je_rolle():
     pruefe("👥 Mitglieder" in tasten(BESITZER) and "👥 Mitglieder" in tasten(VERWALTER), "Besitzer oder Verwalter sieht /mitglieder nicht")
     pruefe("🔑 Einladen" in tasten(BESITZER) and "🔑 Einladen" in tasten(VERWALTER), "Besitzer oder Verwalter sieht Einladen nicht")
     pruefe("👥 Mitglieder" not in tasten(MITGLIED) and "🔑 Einladen" not in tasten(MITGLIED), "normales Mitglied sieht Verwaltungstasten")
-    pruefe("🔑 Einladen" in tasten(einlader) and "👥 Mitglieder" in tasten(einlader), "Admin sieht die Verwaltungstasten nicht")
+    pruefe("🔄 Neustart" in tasten(BESITZER) and "🔄 Neustart" not in tasten(VERWALTER), "Neustart-Taste falsch verteilt")
     pruefe("🔍 Suche" not in tasten(GAST) and "⭐ Favoriten" not in tasten(GAST), "Gast sieht Tasten fuer Suche oder Favoriten")
     pruefe(tasten(FREMD) == ["🎟 Code eingeben"], "Fremde sehen mehr als die Code-Taste")
     pruefe(all(len(z) <= 3 for z in bot.menu_keyboard(BESITZER)["keyboard"]), "zu viele Tasten in einer Reihe")
@@ -409,7 +476,7 @@ def test_auto_loeschen():
     bot.tg = fake_tg
     bot.send = ORIG_SEND
     pruefe(bot.AUTOCLEAR_HOURS < 48, "Auto-Loeschen liegt nicht unter der 48-Stunden-Grenze von Telegram")
-    for wer in (BESITZER, VERWALTER, MITGLIED, GAST):
+    for wer in (BESITZER, VERWALTER, MITGLIED):
         pruefe(bot.may_use(wer, cmd="/autoclear") and bot.may_use(wer, action="ac"), f"/autoclear ist fuer {wer} nicht erlaubt")
     pruefe(not bot.may_use(FREMD, cmd="/autoclear") and not bot.may_use(FREMD, action="ac"), "Fremde duerfen /autoclear nutzen")
     # Standard: aus, es wird nichts gemerkt
@@ -498,10 +565,10 @@ def test_menue_ausblenden():
     tastatur = bot.menu_keyboard(BESITZER)
     pruefe("is_persistent" not in tastatur, "das Menue ist festgeheftet und laesst sich nicht einklappen")
     pruefe(tastatur.get("resize_keyboard") is True, "das Menue ist nicht kompakt")
-    for name, cid in {"Besitzer": BESITZER, "Verwalter": VERWALTER, "Mitglied": MITGLIED, "Gast": GAST}.items():
+    for name, cid in {"Besitzer": BESITZER, "Verwalter": VERWALTER, "Mitglied": MITGLIED}.items():
         pruefe("🙈 Ausblenden" in tasten(cid), f"{name} hat keine Taste zum Ausblenden")
     pruefe("🙈 Ausblenden" not in tasten(FREMD), "Fremde sehen die Ausblenden-Taste")
-    for wer in (BESITZER, VERWALTER, MITGLIED, GAST):
+    for wer in (BESITZER, VERWALTER, MITGLIED):
         pruefe(bot.may_use(wer, cmd="/menue") and bot.may_use(wer, cmd="/menueaus"), f"/menue ist fuer {wer} nicht erlaubt")
     pruefe(not bot.may_use(FREMD, cmd="/menue") and not bot.may_use(FREMD, cmd="/menueaus"), "Fremde duerfen /menue nutzen")
     bot.handle_message({"chat": {"id": MITGLIED}, "text": "🙈 Ausblenden", "from": {"first_name": "T"}})
@@ -515,7 +582,7 @@ def test_menue_ausblenden():
 
 def test_clear_befehl():
     neu()
-    for wer in (BESITZER, VERWALTER, MITGLIED, GAST):
+    for wer in (BESITZER, VERWALTER, MITGLIED):
         pruefe(bot.may_use(wer, cmd="/clear"), f"/clear ist fuer {wer} nicht erlaubt")
     pruefe(not bot.may_use(FREMD, cmd="/clear"), "Fremde duerfen /clear nutzen")
     aufrufe, nachrichten = [], []
@@ -566,14 +633,11 @@ def test_tracking_zeigt_gleis_und_ueber():
         pass
 
 
-def test_restart_nur_besitzer_und_verwalter():
-    """/restart ist die einzige Betriebsfunktion fuer den Besitzer. Admins, Mitglieder, Gaeste und Fremde bekommen sie nie."""
+def test_restart_nur_besitzer():
+    """/restart ist die einzige Betriebsfunktion im Bot und gehoert allein dem Besitzer."""
     neu()
-    admin = MITGLIED + 1
-    bot.data["members"].append(admin)
-    bot.data["admins"].append(admin)
-    erlaubt = {"Besitzer": BESITZER, "Verwalter": VERWALTER}
-    verboten = {"Admin": admin, "Mitglied": MITGLIED, "Gast": GAST, "Fremder": FREMD}
+    erlaubt = {"Besitzer": BESITZER}
+    verboten = {"Verwalter": VERWALTER, "Mitglied": MITGLIED, "Gast": GAST, "Fremder": FREMD}
     for name, cid in erlaubt.items():
         pruefe(bot.may_use(cid, cmd="/restart") and bot.may_use(cid, action="rst"), f"{name} darf /restart nicht")
         pruefe("🔄 Neustart" in tasten(cid), f"{name} sieht die Taste Neustart nicht")
@@ -585,11 +649,6 @@ def test_restart_nur_besitzer_und_verwalter():
     bot.tg = lambda methode, **p: aufrufe.append((methode, p))
     bot.save = lambda: None
     bot.schedule_restart = lambda: neustarts.append(1)
-    # Hilfe: nur Besitzer und Verwalter sehen /restart
-    for name, cid in {**erlaubt, **verboten}.items():
-        gesendet.clear()
-        bot.cmd_help(cid)
-        pruefe(("/restart" in gesendet[-1][1]) == (name in erlaubt), f"/hilfe zeigt /restart falsch fuer {name}")
     # Befehl und Knopf: Unberechtigte loesen nichts aus, auch nicht mit nachgebauten Knoepfen
     for name, cid in verboten.items():
         gesendet.clear()
@@ -600,30 +659,24 @@ def test_restart_nur_besitzer_und_verwalter():
         bot.restart_pending.pop(cid, None)
     pruefe(not neustarts, "Unberechtigte konnten den Neustart ausloesen")
     # Ablauf: ohne Rueckfrage nichts, mit Rueckfrage genau einmal, abbrechen und Ablauf zaehlen nicht
-    for cid in erlaubt.values():
-        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
-        pruefe(not neustarts, "Neustart ohne vorherige Rueckfrage")
-        gesendet.clear()
-        bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
-        pruefe(any("neu starten" in t for _, t, _ in gesendet) and not neustarts, "Rueckfrage kommt nicht oder startet schon")
-        bot.handle_callback({"id": "x", "data": "rst:0", "message": {"chat": {"id": cid}, "message_id": 5}})
-        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
-        pruefe(not neustarts, "Neustart nach Abbrechen")
-        bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
-        bot.restart_pending[cid] -= bot.RESTART_ASK_TTL + 5
-        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
-        pruefe(not neustarts, "Neustart nach abgelaufener Rueckfrage")
-        bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
-        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
-        pruefe(len(neustarts) == 1, "bestaetigter Neustart wird nicht ausgeloest")
-        bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
-        pruefe(len(neustarts) == 1, "dieselbe Bestaetigung loest zweimal aus")
-        neustarts.clear()
-    # Verwalter hat nie weniger Rechte als der Besitzer, kann den Besitzer aber nicht entfernen oder umbesetzen
-    for ziel in (BESITZER,):
-        bot.handle_member_admin_callback({"id": "x"}, VERWALTER, 1, "mrm", str(ziel))
-        bot.handle_member_admin_callback({"id": "x"}, VERWALTER, 1, "mr", f"{ziel}:a")
-    pruefe(bot.data["owner"] == BESITZER and bot.is_full(BESITZER) and BESITZER not in bot.data["admins"], "Verwalter konnte den Besitzer entfernen oder umbesetzen")
+    cid = BESITZER
+    bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+    pruefe(not neustarts, "Neustart ohne vorherige Rueckfrage")
+    gesendet.clear()
+    bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
+    pruefe(any("neu starten" in t for _, t, _ in gesendet) and not neustarts, "Rueckfrage kommt nicht oder startet schon")
+    bot.handle_callback({"id": "x", "data": "rst:0", "message": {"chat": {"id": cid}, "message_id": 5}})
+    bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+    pruefe(not neustarts, "Neustart nach Abbrechen")
+    bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
+    bot.restart_pending[cid] -= bot.RESTART_ASK_TTL + 5
+    bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+    pruefe(not neustarts, "Neustart nach abgelaufener Rueckfrage")
+    bot.handle_message({"chat": {"id": cid}, "text": "/restart", "from": {"first_name": "T"}})
+    bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+    pruefe(len(neustarts) == 1, "bestaetigter Neustart wird nicht ausgeloest")
+    bot.handle_callback({"id": "x", "data": "rst:1", "message": {"chat": {"id": cid}, "message_id": 5}})
+    pruefe(len(neustarts) == 1, "dieselbe Bestaetigung loest zweimal aus")
 
 
 if __name__ == "__main__":

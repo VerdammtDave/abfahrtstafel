@@ -4,8 +4,7 @@
 # Pflicht-Variablen (in Coolify unter Environment Variables, als Runtime-Variable):
 #   BOT_TOKEN     Token von @BotFather
 #   BOT_OWNER_ID  Telegram-Chat-ID des Besitzers (z. B. von @userinfobot). Nur diese Person wird Besitzer.
-# Optional:
-#   VERWALTER_ID  Chat-ID der Person, die den Server betreibt. Sie hat im Bot immer mindestens die Rechte des Besitzers.
+# Verwalter ernennt der Besitzer im Bot (/mitglieder), dafuer gibt es keine Einstellung.
 # Die Domain wird in Coolify beim Dienst "web" eingetragen (Port 80). Der Dienst "bot" bekommt keine Domain.
 services:
   web:
@@ -30,7 +29,6 @@ services:
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       BOT_OWNER_ID: ${BOT_OWNER_ID}
-      VERWALTER_ID: ${VERWALTER_ID:-}     # optional: Chat-ID des Server-Betreibers (Rolle Verwalter)
       BOT_API_HOST: 0.0.0.0
       BOT_TRUST_PROXY: "true"
       BOT_DATA_FILE: /data/data.json

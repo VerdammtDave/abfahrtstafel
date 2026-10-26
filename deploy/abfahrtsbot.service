@@ -7,8 +7,8 @@ Wants=network-online.target
 User=abfahrtsbot
 Group=abfahrtsbot
 WorkingDirectory=/opt/abfahrtsbot
-# Verwalter (Betreiber des Servers): VERWALTER_ID und BOT_OWNER_ID per Environment= oder EnvironmentFile= setzen,
-# z. B. Environment=VERWALTER_ID=123456789. Alternativ "verwalter_id" in config.json (die Umgebungsvariable hat Vorrang).
+# Besitzer: BOT_OWNER_ID per Environment= oder EnvironmentFile= setzen, z. B. Environment=BOT_OWNER_ID=123456789.
+# Alternativ "owner_id" in config.json (die Umgebungsvariable hat Vorrang). Verwalter ernennt der Besitzer im Bot.
 ExecStart=/usr/bin/python3 /opt/abfahrtsbot/abfahrtsbot.py
 Restart=always
 RestartSec=10

@@ -38,7 +38,7 @@ anlegen, oder in Proxmox unter Container → Netzwerk eine statische IP eintrage
 2. Token eintragen: `nano /opt/abfahrtsbot/config.json`, bei `bot_token` den Token von BotFather einsetzen.
 3. Bot starten: `systemctl enable --now abfahrtsbot`
 4. Log prüfen: `journalctl -u abfahrtsbot -f`. Dort muss **„Web-API auf 127.0.0.1:8787“** und **„Bot läuft.“** stehen.
-5. In Telegram dem Bot `/start` schreiben. **Wer als Erstes `/start` sendet, wird Besitzer** (Admin). Das sollte der Bot-Betreiber sein.
+5. In Telegram dem Bot `/start` schreiben. **Wer als Erstes `/start` sendet, wird Besitzer**. Das sollte der Bot-Betreiber sein.
 
 Lokaler Test im Heimnetz: `http://<Container-IP>:8080` zeigt die Abfahrtstafel.
 
@@ -97,9 +97,9 @@ Schlägt es fehl, sind meist DNS-Eintrag (Schritt 3) oder Port 80 (Schritt 4) fa
 
 ## Weitere Personen zulassen
 
-- Admin schickt dem Bot `/code` und gibt die erhaltene Zeile (`/code ABCD2345`) weiter. Die Person schickt sie dem Bot und ist dann
+- Der Besitzer oder ein Verwalter schickt dem Bot `/code` und gibt die erhaltene Zeile (`/code ABCD2345`) weiter. Die Person schickt sie dem Bot und ist dann
   Mitglied (Code: 24 h gültig, einmal nutzbar). Danach kann sie sich auch auf der Website anmelden.
-- `/mitglieder` (nur Admin): Eingeladene ansehen und entfernen. Entfernte verlieren auch die Website-Anmeldung.
+- `/mitglieder` (Besitzer und Verwalter): Eingeladene ansehen und entfernen. Entfernte verlieren auch die Website-Anmeldung.
 - Nicht eingeladene Personen können auf der Seite nichts verfolgen und sehen keine Daten anderer.
 
 ## Wartung

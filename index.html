@@ -125,7 +125,28 @@
   .alertlink.info:hover { opacity: 1; }
   .modal .altext { text-align: left; white-space: pre-line; margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); font-size: 14px; max-height: 40vh; overflow: auto; }
   .modal .alhead { margin: 0 0 8px; font-size: 17px; }
-  .modal .card.wide { max-width: 560px; text-align: left; max-height: 90vh; overflow: auto; }
+  .modal .card.wide { width: min(780px, calc(100% - 24px)); max-width: none; text-align: left; max-height: min(92vh, 960px); overflow: auto; padding: 24px 28px; }
+  .modal .card.wide .setsec { padding: 16px 0; }
+  .memlist { border: 1px solid var(--border, rgba(255,255,255,.2)); border-radius: 12px; overflow: hidden; }
+  .memlist .memrow { display: grid; grid-template-columns: minmax(0, 1fr) 150px 44px; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line, rgba(255,255,255,.12)); }
+  .memlist .memrow:last-child { border-bottom: 0; }
+  .memrow .who { min-width: 0; overflow-wrap: anywhere; }
+  .rolecell { min-width: 0; }
+  .rolesel { width: 100%; background: var(--surface, rgba(255,255,255,.1)); color: var(--white); border: 1px solid var(--border, rgba(255,255,255,.3)); border-radius: 10px;
+    padding: 7px 8px; font: inherit; font-size: 14px; cursor: pointer; }
+  .rolesel:disabled { opacity: .5; }
+  .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--surface-hi, rgba(255,255,255,.12)); }
+  .badge.besitzer { background: var(--accent); color: var(--tab-on); }
+  .hammer-ph { width: 40px; }
+  .inv { display: flex; }
+  @media (max-width: 560px) {
+    .modal .card.wide { padding: 18px 16px; width: calc(100% - 16px); max-height: 94vh; }
+    .memlist .memrow { grid-template-columns: minmax(0, 1fr) 40px; row-gap: 8px; }
+    .memlist .memrow .rolecell { grid-column: 1; grid-row: 2; }
+    .memlist .memrow .hammer, .memlist .memrow .hammer-ph { grid-column: 2; grid-row: 1 / span 2; }
+    .setrow { flex-direction: column; align-items: stretch; }
+    .num input { width: 100%; }
+  }
   .modal .card.wide .alhead { font-size: 20px; margin: 0 0 6px; }
   .setsec { padding: 12px 0; border-top: 1px solid var(--border, rgba(255,255,255,.2)); }
   .setsec h4 { margin: 0 0 8px; font-size: 15px; }
@@ -353,6 +374,10 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.7.0', date: '26.10.2026', items: [
+    'Neue Rollen: Besitzer, Verwalter, Mitglied und Gast. Verwalter laden ein und verwalten Mitglieder und Gäste, Mitglieder nutzen den Bot, Gäste sehen nur per Code geteilte Verbindungen',
+    'Rollen lassen sich in der Mitgliederverwaltung per Dropdown ändern, immer nur für Personen unter dir',
+    'Größeres Einstellungsfenster, auf dem Handy mit untereinander angeordneten Feldern' ] },
   { v: '1.6.1', date: '26.10.2026', items: [
     'Der Rauswerfen-Knopf zeigt nur noch den roten Hammer' ] },
   { v: '1.6.0', date: '26.10.2026', items: [
@@ -881,29 +906,56 @@ document.addEventListener('click', e => {
   }
 });
 
+const ROLLEN = { verwalter: 'Verwalter', mitglied: 'Mitglied', gast: 'Gast' };
+const memSay = (t, k) => { const m = byId('memMsg'); if (m) { m.textContent = t; m.className = 'setmsg ' + (k || ''); } };
+
 function renderMembers() {
   const d = setAdmin, box = byId('memBox');
   if (!d || !box) return;
   const q = (byId('memQ').value || '').trim().toLowerCase();
-  const rows = d.members.filter(m => !q || (m.name + ' ' + m.role).toLowerCase().includes(q)).map(m =>
-    `<div class="memrow"><div><b>${esc(m.name)}</b><span class="role">${esc(m.role)}${m.invited_by ? ' · eingeladen von ' + esc(m.invited_by) : ''}</span></div>${m.removable || m.can_role
-      ? `<div class="memact">${m.can_role ? `<button type="button" data-act="role" data-ref="${esc(m.ref)}" data-role="${m.role === 'Admin' ? 'mitglied' : 'admin'}">${m.role === 'Admin' ? 'Zum Mitglied machen' : 'Zum Admin machen'}</button>` : ''}
-         ${m.removable ? `<button type="button" class="hammer" data-act="remove" data-ref="${esc(m.ref)}" data-name="${esc(m.name)}" title="Rauswerfen" aria-label="${esc(m.name)} rauswerfen">🔨</button>` : ''}</div>` : ''}</div>`).join('') || '<p class="hint">Keine Treffer.</p>';
-  const inv = d.invites.map(i => `<div class="memrow"><div><code>/code ${esc(i.code)}</code><span class="role">von ${esc(i.by)} · gültig bis ${when(i.expires)}</span></div>
+  const rows = d.members.filter(m => !q || (m.name + ' ' + m.role).toLowerCase().includes(q)).map(m => {
+    const aktuell = m.role.toLowerCase();
+    // Dropdown nur, wenn man die Rolle dieser Person ändern darf. Sonst steht die Rolle als Schild da.
+    const rolle = m.roles.length
+      ? `<select class="rolesel" data-act="role" data-ref="${esc(m.ref)}" aria-label="Rolle von ${esc(m.name)}">${m.roles.map(r =>
+          `<option value="${r}" ${r === aktuell ? 'selected' : ''}>${ROLLEN[r]}</option>`).join('')}</select>`
+      : `<span class="badge ${aktuell}">${esc(m.role)}</span>`;
+    const hammer = m.removable
+      ? `<button type="button" class="hammer" data-act="remove" data-ref="${esc(m.ref)}" data-name="${esc(m.name)}" title="Rauswerfen" aria-label="${esc(m.name)} rauswerfen">🔨</button>`
+      : '<span class="hammer-ph"></span>';
+    return `<div class="memrow"><div class="who"><b>${esc(m.name)}</b>${m.invited_by ? `<span class="role">eingeladen von ${esc(m.invited_by)}</span>` : ''}</div>
+      <div class="rolecell">${rolle}</div>${hammer}</div>`;
+  }).join('') || '<p class="hint">Keine Treffer.</p>';
+  const inv = d.invites.map(i => `<div class="memrow inv"><div class="who"><code>/code ${esc(i.code)}</code><span class="role">von ${esc(i.by)} · gültig bis ${when(i.expires)}</span></div>
     <div class="memact"><button type="button" data-act="copy" data-code="${esc(i.code)}">Kopieren</button><button type="button" data-act="revoke" data-code="${esc(i.code)}">Widerrufen</button></div></div>`).join('')
     || '<p class="hint">Keine offenen Einladungen.</p>';
   const hist = d.history.slice(0, 8).map(h => `<li>${esc(h.status)}${h.who ? ' (' + esc(h.who) + ')' : ''} · ${when(h.ts)}</li>`).join('');
-  box.innerHTML = `<h5>Mitglieder</h5>${rows}
+  box.innerHTML = `<h5>Personen</h5><div class="memlist">${rows}</div>
     <h5>Einladungen</h5><button type="button" class="primary" data-act="invite">Neue Einladung erstellen</button>${inv}
-    <p class="hint">Eine Einladung gilt 24 Stunden, nur einmal, und gibt nur Mitglieder-Zugang, nie Verwaltungsrechte. Die Person schickt dem Bot die Zeile „/code …“.
-    Rollen: Admin darf einladen und Mitglieder rauswerfen (nicht den Besitzer), Mitglied nutzt nur den Bot. Rollen vergeben nur Besitzer und Verwalter.</p>
+    <p class="hint">Eine Einladung gilt 24 Stunden, nur einmal, und gibt nur Mitglieder-Zugang. Die Person schickt dem Bot die Zeile „/code …“.
+    Rollen: Besitzer (genau einer), Verwalter (lädt ein und verwaltet Mitglieder und Gäste), Mitglied (nutzt den Bot), Gast (sieht nur per Code geteilte Verbindungen).
+    Jede Rolle ändert nur Rollen unter sich, Verwalter ernennt nur der Besitzer.</p>
     ${hist ? '<h5>Verlauf</h5><ul class="hist">' + hist + '</ul>' : ''}<div id="memMsg" class="setmsg" role="status" aria-live="polite"></div>`;
 }
+
+document.addEventListener('change', async e => {
+  const sel = e.target.closest('#memBox select[data-act="role"]');
+  if (!sel) return;
+  sel.disabled = true;
+  try {
+    setAdmin = await bot('POST', '/members/role', { ref: sel.dataset.ref, role: sel.value });
+    renderMembers();
+    memSay(setAdmin.message || 'Gespeichert', 'good');
+  } catch (ex) {
+    renderMembers();                                              // Auswahl zurück auf den echten Stand
+    memSay(ex.message, 'bad');
+  }
+});
 
 document.addEventListener('input', e => { if (e.target.id === 'memQ') renderMembers(); });
 
 document.addEventListener('click', async e => {
-  const b = e.target.closest('#memBox [data-act]');
+  const b = e.target.closest('#memBox button[data-act]');
   if (!b) return;
   const act = b.dataset.act, say = (t, k) => { const m = byId('memMsg'); if (m) { m.textContent = t; m.className = 'setmsg ' + (k || ''); } };
   if (act === 'copy') {
@@ -921,7 +973,6 @@ document.addEventListener('click', async e => {
   try {
     const call = { invite: () => bot('POST', '/members/invite'),
       revoke: () => bot('DELETE', '/members/invite?code=' + encodeURIComponent(b.dataset.code)),
-      role: () => bot('POST', '/members/role', { ref: b.dataset.ref, role: b.dataset.role }),
       remove: () => bot('DELETE', '/members?ref=' + encodeURIComponent(b.dataset.ref)) }[act];
     setAdmin = await call();
     renderMembers();

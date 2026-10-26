@@ -27,7 +27,7 @@ Browser ──► https://abfahrtstafel.deine-domain.de ──► web (nginx) �
 3. Unter **Environment Variables** eintragen (beide als Runtime-Variable):
    - `BOT_TOKEN` = der Token von BotFather
    - `BOT_OWNER_ID` = deine Chat-ID
-   - optional `VERWALTER_ID` = Chat-ID der Person, die den Server betreibt (Rolle mit immer mindestens den Rechten des Besitzers, siehe `bot/README.md`)
+   - Hinweis: `VERWALTER_ID` gibt es nicht mehr. Verwalter ernennt der Besitzer im Bot (`/mitglieder`, siehe `bot/README.md`). Eine noch gesetzte Variable kannst du löschen.
 4. Beim Dienst **web** die Domain eintragen: `https://abfahrtstafel.deine-domain.de` (Port 80). Der Dienst **bot** bekommt **keine** Domain.
 5. **Deploy**. Im Log des Dienstes `bot` muss „Web-API auf 0.0.0.0:8787“ und „Bot läuft.“ stehen.
 6. Öffne die Seite, klicke „Mit Telegram anmelden“ und bestätige im Bot mit „Ja, anmelden“.
