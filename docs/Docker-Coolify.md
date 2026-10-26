@@ -72,6 +72,7 @@ Coolify kann zu jedem Pull Request eine eigene Vorschau starten (`{{pr_id}}.prev
 ## Fehlerseite bei Ausfall
 
 Wenn der Bot nicht erreichbar ist (zum Beispiel beim Redeploy), zeigt der Webserver statt der nackten Fehlermeldung die Seite `deploy/web/503.html` („Der Zug ist leider abgefahren“). Sie lädt sich selbst neu, sobald alles wieder geht.
+Ausprobieren: `https://deine-domain.de/503-test` zeigt die Seite (mit Status 503), ohne dass etwas ausfällt.
 Eine Anfrage an `/api` bekommt in dem Fall eine JSON-Meldung, die die Website anzeigen kann.
 
 Grenze: Ist der **ganze Web-Container** aus (während Coolify ihn gerade austauscht), antwortet der Proxy von Coolify (Traefik) mit seiner eigenen Fehlermeldung, die liegt außerhalb dieses Projekts.
