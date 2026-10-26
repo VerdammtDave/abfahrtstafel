@@ -145,6 +145,11 @@
   .alertlink.info:hover { opacity: 1; }
   .modal .altext { text-align: left; white-space: pre-line; margin: 10px 0; padding: 10px 12px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); font-size: 14px; max-height: 40vh; overflow: auto; }
   .modal .alhead { margin: 0 0 8px; font-size: 17px; }
+  /* Schließen-Kreuz oben rechts, bleibt beim Scrollen sichtbar */
+  .modal .mclosebar { position: sticky; top: 0; height: 0; z-index: 6; text-align: right; }
+  .modal .card button.mclose { position: absolute; right: -12px; top: -14px; width: 36px; height: 36px; padding: 0; margin: 0; display: grid; place-items: center;
+    border-radius: 50%; font-size: 16px; line-height: 1; background: var(--surface-hi, rgba(255,255,255,.14)); color: var(--white); border: 1px solid var(--border, rgba(255,255,255,.3)); }
+  .modal .card .alhead { padding-right: 34px; }
   .modal .card.trip { width: min(560px, calc(100% - 24px)); max-width: none; text-align: left; max-height: min(90vh, 900px); overflow: auto; padding: 22px 24px; }
   .modal .card.wide { width: min(780px, calc(100% - 24px)); max-width: none; text-align: left; max-height: min(92vh, 960px); overflow: auto; padding: 24px 28px; }
   .modal .card.wide .setsec { padding: 16px 0; }
@@ -430,6 +435,8 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.8.3', date: '26.10.2026', items: [
+    'Alle Fenster haben oben rechts ein ✕ zum Schließen, das beim Scrollen sichtbar bleibt. Esc schließt ebenfalls' ] },
   { v: '1.8.2', date: '26.10.2026', items: [
     'Die ganze „Über“-Zelle ist anklickbar, nicht nur der Text' ] },
   { v: '1.8.1', date: '26.10.2026', items: [
@@ -918,7 +925,11 @@ document.addEventListener('click', e => {
   if (e.target.closest('#menuBtn')) return setMenu(!open);
   if (open && (!e.target.closest('#menuPanel') || e.target.closest('.menuitem'))) setMenu(false);
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  setMenu(false);
+  if (!$('#modal').classList.contains('hidden')) closeModal();
+});
 document.addEventListener('keydown', e => {                         // Über-Zelle per Tastatur öffnen
   const u = e.target.closest?.('.board .ueber[role="button"]');
   if (u && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTrip(depByKey.get(u.closest('.row')?.dataset.key)); }
@@ -1140,7 +1151,7 @@ document.addEventListener('click', async e => {
 });
 
 function showModal(html, wide) {
-  $('#modalBody').innerHTML = html;
+  $('#modalBody').innerHTML = '<div class="mclosebar"><button type="button" class="mclose" aria-label="Schließen" title="Schließen">✕</button></div>' + html;
   $('#modalBody').classList.toggle('wide', wide === true);
   $('#modalBody').classList.toggle('trip', wide === 'trip');
   $('#modal').classList.remove('hidden');
@@ -1276,7 +1287,7 @@ document.addEventListener('click', e => {
   else if (e.target.closest('#updatesBtn')) showUpdates();
   else if (e.target.closest('#settingsBtn')) showSettings();
   else if (e.target.closest('#setDiscard')) closeModal(true);
-  else if (e.target.closest('#loginCancel') || e.target === $('#modal')) closeModal();
+  else if (e.target.closest('#loginCancel') || e.target.closest('.mclose') || e.target === $('#modal')) closeModal();
 });
 
 // Aktiven Knopf eines Umschalters wechseln
