@@ -68,3 +68,11 @@ Coolify kann zu jedem Pull Request eine eigene Vorschau starten (`{{pr_id}}.prev
   Der Bot bleibt dann aus (`BOT_IDLE_WITHOUT_TOKEN`), die Website der Vorschau läuft trotzdem, nur ohne Telegram-Anmeldung.
 - **Mit Test-Bot:** Dort stattdessen den Token eines zweiten Bots von `@BotFather` eintragen.
 
+
+## Fehlerseite bei Ausfall
+
+Wenn der Bot nicht erreichbar ist (zum Beispiel beim Redeploy), zeigt der Webserver statt der nackten Fehlermeldung die Seite `deploy/web/503.html` („Der Zug ist leider abgefahren“). Sie lädt sich selbst neu, sobald alles wieder geht.
+Eine Anfrage an `/api` bekommt in dem Fall eine JSON-Meldung, die die Website anzeigen kann.
+
+Grenze: Ist der **ganze Web-Container** aus (während Coolify ihn gerade austauscht), antwortet der Proxy von Coolify (Traefik) mit seiner eigenen Fehlermeldung, die liegt außerhalb dieses Projekts.
+Wer auch diese Seite ändern will, muss auf dem Server in Traefik eine Fehlerseiten-Weiterleitung (Middleware `errors`) einrichten, die auf `503.html` zeigt.
