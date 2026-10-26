@@ -105,7 +105,7 @@
   .zeit b { display: block; font-weight: normal; font-size: 32px; line-height: 38px; font-variant-numeric: tabular-nums; }
   .zeit small { font-size: 15px; display: block; line-height: 18px; white-space: nowrap; overflow: hidden; padding-left: 4px; }
   .nach { font-weight: bold; font-size: 25px; padding: 6px 8px 0 8px; align-self: start; line-height: 30px; }
-  .ueber { font-size: 18px; padding: 10px 8px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: start; }
+  .ueber { font-size: 18px; padding: 10px 8px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: stretch; }   /* stretch: die ganze Zelle ist anklickbar, nicht nur der Text */
   .mq { display: inline-block; white-space: nowrap; }
   .mq .end { display: none; font-style: normal; color: var(--white); font-weight: normal; margin: 0 .7em; }
   .mq.run .end { display: inline; }
@@ -198,6 +198,7 @@
   .memact button, .memrow + * button { margin-top: 0; }
   .hist { margin: 0; padding-left: 18px; font-size: 13px; opacity: .85; }
   .board .ueber[role="button"] { cursor: pointer; }
+  .board .ueber[role="button"]:hover { background: var(--surface-hi, rgba(255,255,255,.06)); }
   .board .row:hover .ueber[role="button"] { text-decoration: underline dotted; text-underline-offset: 4px; }
   .tripbtn { display: none; margin: 6px 0 0; padding: 3px 10px; font-size: 12.5px; border-radius: 999px; background: var(--surface, rgba(255,255,255,.1)); color: var(--muted, inherit); border: 1px solid var(--border, rgba(255,255,255,.3)); }
   .modal .card .alhead .vz { margin-left: 8px; vertical-align: middle; font-size: 14px; }
@@ -429,6 +430,8 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.8.2', date: '26.10.2026', items: [
+    'Die ganze „Über“-Zelle ist anklickbar, nicht nur der Text' ] },
   { v: '1.8.1', date: '26.10.2026', items: [
     'Ein Klick auf „Über“ zeigt nur noch die Fahrt und ihre Halte und schaltet nie mehr das Verfolgen um, auch nicht bei ausfallenden Fahrten' ] },
   { v: '1.8.0', date: '26.10.2026', items: [
