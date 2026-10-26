@@ -6,6 +6,7 @@
 <title>Abfahrtstafel</title>
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="icon" type="image/png" sizes="1024x1024" href="icon-1024.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#000080">
 <style>
@@ -322,6 +323,8 @@
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '1.4.2', date: '26.10.2026', items: [
+    'Neues Icon: Kalender mit Uhr, Tafel, Zug und Telegram-Flieger' ] },
   { v: '1.4.1', date: '26.10.2026', items: [
     'Neues Icon in Blau und Gelb mit Abfahrtszeiten' ] },
   { v: '1.4.0', date: '26.10.2026', items: [
