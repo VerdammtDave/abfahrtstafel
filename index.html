@@ -62,7 +62,7 @@
   .star { background: none; border: 0; color: var(--white); font-size: 40px; line-height: 1; width: 150px; text-align: right; }
   .star.on { color: var(--star); }
 
-  .cols, .row { display: grid; grid-template-columns: 150px minmax(140px, 1.1fr) 2.4fr 110px; }
+  .cols, .row { display: grid; grid-template-columns: 230px minmax(140px, 1.1fr) 2.4fr 110px; }
   .cols { background: var(--head-bg); color: var(--head-fg); font-size: 32px; font-weight: bold; height: 52px; align-items: center; }
   .cols div { padding: 0 6px 0 4px; }
   .cols div:last-child { text-align: right; padding-right: 8px; }
@@ -123,6 +123,8 @@
   .vz { font-size: 16px; font-weight: bold; margin-left: 10px; vertical-align: middle; color: var(--st-yellow); }
   .vz.orange { color: var(--st-orange); }
   .vz.red { color: var(--st-red); }
+  .cancel .zeit .vz { text-decoration: none; opacity: 1; }
+  .cancel .zeit .vz.alertlink { text-decoration: underline; }
   .favitem.plain { cursor: default; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
   .modal.hidden { display: none; }
@@ -211,7 +213,7 @@
   html[data-ui="modern"] .favitem span, html[data-ui="modern"] .favitem:hover span { color: var(--accent); }
 
   @media (max-width: 700px) {
-    .cols, .row { grid-template-columns: 112px 1fr 68px; }
+    .cols, .row { grid-template-columns: 150px 1fr 68px; }
     .cols div:nth-child(3), .ueber { display: none; }
     .track .cols, .track .row { grid-template-columns: 150px 1fr 96px; }
     .track .gleis { gap: 8px; padding-right: 8px; }
@@ -390,17 +392,18 @@ function rowHtml(d, idx) {
   // Verspätung/Ausfall steht in einer eigenen Zeile unter der Laufschrift
   const sev = d.cancelled || delayMin >= 15 ? 'red' : delayMin >= 5 ? 'orange' : '';
   const hasAlert = !!d.alerts?.length;
-  const alertLink = (cls, text) => `<span class="status alertlink ${cls}" role="button" tabindex="0" title="Meldung anzeigen">${text}</span>`;
-  const status = d.cancelled ? (hasAlert ? '' : 'Fahrt fällt aus')       // mit Meldung: „Fahrt fällt aus“ ist unterstrichen und anklickbar
-    : delayMin >= 1 ? `+${delayMin} min · ca. ${hhmm(d.when)}` : '';
-  const alertHtml = hasAlert && d.cancelled ? alertLink(sev, 'Fahrt fällt aus') : '';
+  // Verspätung/Ausfall steht direkt neben der Uhrzeit; mit Meldung ist „fällt aus“ unterstrichen und anklickbar
+  const vzText = d.cancelled ? 'fällt aus' : delayMin >= 1 ? `+${delayMin} min` : '';
+  const vz = !vzText ? '' : d.cancelled && hasAlert
+    ? `<span class="vz alertlink ${sev}" role="button" tabindex="0" title="Meldung anzeigen">${vzText}</span>`
+    : `<span class="vz ${sev}" title="${d.cancelled ? '' : 'ca. ' + hhmm(d.when)}">${vzText}</span>`;
   const info = hasAlert ? '<i class="alertlink info" role="button" tabindex="0" title="Meldung anzeigen" aria-label="Meldung anzeigen"></i>' : '';   // neben der Uhrzeit, damit die Zeile nicht höher wird
   depByKey.set(d.key, d);
   const bell = session ? `<i class="bell ${tracked.has(d.key) ? 'on' : ''}" title="Fahrt im Telegram-Bot verfolgen">🔔</i>` : '';
   return `<div class="row ${d.cancelled ? 'cancel' : ''} ${session ? 'trackable' : ''}" data-idx="${idx}" data-key="${esc(d.key)}">
-    <div class="zeit"><b>${hhmm(planned)}${info}${bell}</b><small>${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
+    <div class="zeit"><b>${hhmm(planned)}${info}${vz}${bell}</b><small>${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
     <div class="nach">${esc(d.direction || '')}</div>
-    <div class="ueber"><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span>${status ? `<span class="status ${sev}">${status}</span>` : ''}${alertHtml}</div>
+    <div class="ueber"><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span></div>
     <div class="gleis">${d.platform ? `<small>${platformLabel(d.mode)}</small>${esc(d.platform)}` : ''}</div>
   </div>`;
 }
