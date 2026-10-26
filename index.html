@@ -246,7 +246,6 @@
   @keyframes poch { 0% { box-shadow: 0 0 0 0 rgba(63,185,80,.65); transform: scale(1); } 20% { transform: scale(1.18); }
     70% { box-shadow: 0 0 0 11px rgba(63,185,80,0); transform: scale(1); } 100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); transform: scale(1); } }
   .stops li.next::after { background: #3fb950; border-color: #3fb950; animation: poch 1.7s ease-out infinite; }
-  .stops li.here.next::after { background: var(--accent); border-color: #3fb950; }
   .stoplink em.nx { background: color-mix(in srgb, #3fb950 22%, transparent); color: #3fb950; }
   .modal .card .alhead .live { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; vertical-align: middle; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #3fb950; }
   .modal .card .alhead .live::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #3fb950; animation: poch 1.7s ease-out infinite; }
@@ -650,7 +649,7 @@ function tripHtml(d, leg) {
     const zeit = t.late >= 1 ? `<b class="late">${clock(t.real)}</b><s>${clock(t.plan)}</s>` : `<b>${clock(t.real || t.plan)}</b>`;
     const cls = [i === here ? 'here' : i < here ? 'past' : '', i === naechster ? 'next' : ''].join(' ').trim();
     return `<li class="${cls}"><button type="button" class="stoplink" data-id="${esc(p.stopId || '')}" data-name="${esc(p.name)}" ${p.stopId ? '' : 'disabled'}>
-      <span class="stime">${zeit}</span><span class="sname">${esc(p.name)}${i === here ? ' <em>hier</em>' : ''}${i === naechster && i !== here ? ' <em class="nx">nächster Halt</em>' : ''}</span><span class="strack">${p.track ? esc(platformLabel(d.mode) + ' ' + p.track) : ''}</span></button></li>`;
+      <span class="stime">${zeit}</span><span class="sname">${esc(p.name)}${i === here ? `<em${i === naechster ? ' class="nx"' : ''}>hier</em>` : ''}${i === naechster && i !== here ? ' <em class="nx">nächster Halt</em>' : ''}</span><span class="strack">${p.track ? esc(platformLabel(d.mode) + ' ' + p.track) : ''}</span></button></li>`;
   }).join('');
   return `<h3 class="alhead">${ic(d.mode === 'BUS' ? 'bus' : 'train')} ${esc(d.line?.name || '')} → ${esc(d.direction || last.name)} ${stand}${live ? '<span class="live" title="Echtzeitdaten">Live</span>' : ''}</h3>
     <div class="tripsum">
