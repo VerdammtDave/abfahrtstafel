@@ -49,7 +49,8 @@
   #favCount { display: inline-block; }
   .search input { transition: box-shadow .25s, border-color .25s, background-color .25s; }
   .search input:focus { outline: none; box-shadow: 0 0 0 4px var(--ring); }
-  html.theming :not(.mq):not(.ico) { transition: background-color .45s ease, color .45s ease, border-color .45s ease, transform .2s cubic-bezier(.22,1,.36,1) !important; }
+  /* Designwechsel: kurzes Überblenden des ganzen Bildes statt hunderter einzelner Übergänge */
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .18s; }
   @media (prefers-reduced-motion: reduce) {
     *:not(.mq), *:not(.mq)::before, *:not(.mq)::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
   }
@@ -807,15 +808,15 @@ function setActive(group, btn) {
 // Darstellung: klassisch / dunkel / hell
 function applyTheme(t, save) {
   const root = document.documentElement;
-  root.setAttribute('data-theme', t);
-  root.setAttribute('data-ui', 'modern');
-  setActive($('#themes'), document.querySelector(`#themes .chip[data-theme="${t}"]`));
-  if (save) {
-    try { localStorage.setItem('theme', t); } catch {}
-    root.classList.add('theming');                 // Farben weich überblenden
-    setTimeout(() => root.classList.remove('theming'), 600);
-  }
-  marqueeAll();
+  const apply = () => {
+    root.setAttribute('data-theme', t);
+    root.setAttribute('data-ui', 'modern');
+    setActive($('#themes'), document.querySelector(`#themes .chip[data-theme="${t}"]`));
+    marqueeAll();
+  };
+  if (save) try { localStorage.setItem('theme', t); } catch {}
+  if (save && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(apply);
+  else apply();
 }
 document.querySelectorAll('#themes .chip').forEach(b =>
   b.addEventListener('click', () => applyTheme(b.dataset.theme, true)));
