@@ -96,20 +96,37 @@
   .menupanel .themeseg .ico { margin: 0; }
   .tripsum .tripnr { grid-column: 1 / -1; }
   .tripsum .tripnr small { opacity: .65; font-size: 12.5px; }
-  /* „Abfahrten ab“: Schnellwahl (+30 min …) und eine Pille mit Tag, Stunde und Minute aus Auswahllisten */
-  .abrow { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px 6px; font-size: 14px; }
-  .abpill { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 8px 0 12px; border-radius: 999px; box-sizing: border-box;
-    background: var(--surface, rgba(255,255,255,.1)); border: 1px solid var(--border, rgba(255,255,255,.35)); color: var(--white); transition: border-color .15s, box-shadow .15s; }
-  .abpill:hover, .abpill:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring, transparent); }
+  /* „Abfahrten ab“: ein Knopf unter der Leiste, der ein Feld mit Tag, Stunde und Minute zum Antippen öffnet */
+  .abbar { display: flex; justify-content: center; padding: 10px 12px 0; position: relative; z-index: 15; }
+  .abbar.hidden { display: none; }
+  .abwrap { position: relative; display: flex; align-items: center; gap: 8px; max-width: 100%; }
+  .abpill { display: flex; align-items: center; gap: 10px; margin: 0; height: 46px; padding: 0 16px 0 14px; border-radius: 999px; text-align: left;
+    background: var(--surface, rgba(255,255,255,.1)); border: 1px solid var(--border, rgba(255,255,255,.35)); color: var(--white); }
+  .abpill:hover, .abpill[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring, transparent); }
   .abpill.set { border-color: var(--accent); }
-  .abpill .ic { width: 17px; height: 17px; flex: none; margin-right: 4px; }
-  .abpill select { font: inherit; font-size: 14px; border: 0; background: none; color: inherit; padding: 4px 2px; cursor: pointer; outline: none; appearance: none; -webkit-appearance: none; text-align: center; color-scheme: light dark; }
-  .abpill select option { color: #111; background: #fff; }
-  .abpill .colon { opacity: .6; }
-  .abrow .abchip { margin: 0; height: 36px; padding: 0 13px; font-size: 13.5px; border-radius: 999px; background: none; color: inherit; border: 1px solid var(--border, rgba(255,255,255,.35)); }
-  .abrow .abchip:hover { border-color: var(--accent); }
-  .abrow .abNow { background: var(--accent); color: var(--tab-on); border-color: transparent; font-weight: 600; }
-  @media (max-width: 700px) { .abrow { gap: 6px; padding-left: 8px; padding-right: 8px; } .abrow .abchip { padding: 0 10px; } }
+  .abpill .ic { width: 20px; height: 20px; flex: none; color: var(--accent); }
+  .abpill .ablabel { display: flex; flex-direction: column; line-height: 1.15; }
+  .abpill .ablabel small { font-size: 11px; opacity: .65; text-transform: uppercase; letter-spacing: .06em; }
+  .abpill .ablabel b { font-size: 16px; }
+  .abpill .abchev { opacity: .6; font-size: 12px; margin-left: 2px; transition: transform .2s; }
+  .abpill[aria-expanded="true"] .abchev { transform: rotate(180deg); }
+  .abreset { margin: 0; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; border-radius: 50%; background: none; color: inherit; border: 1px solid var(--border, rgba(255,255,255,.35)); }
+  .abreset .ic { width: 16px; height: 16px; }
+  .abpanel { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 24px)); box-sizing: border-box; padding: 14px;
+    border-radius: 16px; background: var(--card, var(--navy)); border: 1px solid var(--border, rgba(255,255,255,.3)); box-shadow: var(--shadow, 0 12px 32px rgba(0,0,0,.5)); text-align: left; }
+  .abpanel .abgroup { margin-top: 12px; }
+  .abpanel .abgroup:first-child { margin-top: 0; }
+  .abpanel .abgroup > span { display: block; margin: 0 0 6px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .65; }
+  .abpanel .abrowx { display: flex; flex-wrap: wrap; gap: 6px; }
+  .abpanel .abgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .abpanel button { margin: 0; min-height: 38px; padding: 4px 8px; font-size: 14px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); color: inherit; border: 1px solid transparent; }
+  .abpanel button:hover { border-color: var(--accent); }
+  .abpanel button.on { background: var(--accent); color: var(--tab-on); font-weight: 700; }
+  .abpanel .abdays { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .abpanel .abdays button { min-width: 0; line-height: 1.2; }
+  .abpanel .abdays button small { display: block; font-size: 11px; opacity: .7; }
+  .abpanel .abquick button { border-radius: 999px; border-color: var(--border, rgba(255,255,255,.3)); }
+  .abpanel .abdone { width: 100%; margin-top: 14px; background: var(--accent); color: var(--tab-on); font-weight: 600; }
   #acct.hidden + .menusec { margin-top: 2px; padding-top: 0; border-top: 0; }
   .search { position: relative; flex: 1 1 260px; max-width: 420px; }
   .search input { width: 100%; font: 16px Arial, sans-serif; padding: 5px 8px; border: 2px solid var(--white); background: var(--white); color: #000; border-radius: 0; }
@@ -486,6 +503,7 @@
   </div>
 </div>
 
+<div class="abbar hidden" id="abbar"></div>
 <div id="out"></div>
 
 <div class="modal hidden" id="modal"><div class="card" id="modalBody"></div></div>
@@ -502,7 +520,7 @@ const UPDATES = [
     'Fernbusse wie Flixbus gelten jetzt als Bus (Symbol, Filter, „Steig“ statt „Gleis“) und nicht mehr als Zug',
     'Zugnummer steht nur noch in den Details der Fahrt und heißt bei Bussen „Fahrtnummer“',
     'Das Telegram-Profilbild lädt zuverlässiger und bleibt zwischengespeichert',
-    'Die Zeitauswahl „Abfahrten ab“ hat Schnellwahl (+30 min, +1 Std, +2 Std) und Auswahllisten für Tag, Stunde und Minute statt des Standard-Kalenders' ] },
+    '„Abfahrten ab“ ist jetzt ein Knopf unter der Leiste. Er öffnet ein Feld zum Antippen mit Schnellwahl (+30 min, +1 Std, +2 Std), Tag, Stunde und Minute' ] },
   { v: '2.0.1', date: '27.10.2026', items: [
     'Die Darstellungs-Knöpfe im Menü (Klassisch, Dunkel, Hell) sitzen sauber nebeneinander und ragen nicht mehr heraus',
     'In der Haltliste steht klein dazu, was die Daten hergeben: Zugnummer, Strecke und Betreiber' ] },
@@ -796,29 +814,60 @@ function rowHtml(d, idx) {
   </div>`;
 }
 
-// „Abfahrten ab“: Tag, Stunde und Minute wählen oder eine Schnellwahl antippen
+// „Abfahrten ab“: Knopf mit Feld zum Antippen (Schnellwahl, Tag, Stunde, Minute)
 const pad2 = n => String(n).padStart(2, '0');
 const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const localIso = d => `${dayKey(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 const in5 = min => new Date(Math.ceil((Date.now() + min * 60000) / 300000) * 300000);   // auf volle 5 Minuten aufgerundet
-function abHtml() {
+const tagName = d => dayKey(d) === dayKey(new Date()) ? 'Heute' : dayKey(d) === dayKey(new Date(Date.now() + 864e5)) ? 'Morgen'
+  : d.toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', '');
+let abOpen = false, abTimer = null;
+
+function renderAb() {
+  const box = $('#abbar');
+  const show = view === 'board' || (view === 'favs' && favSel);
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
   const set = startAt && !isNaN(new Date(startAt));
-  const base = set ? new Date(startAt) : in5(0);
-  const days = [...Array(8)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d; });
-  if (!days.some(d => dayKey(d) === dayKey(base))) days.unshift(base);
-  const sel = (cls, label, opts) => `<select class="abSel ${cls}" aria-label="${label}">${opts}</select>`;
-  const heute = dayKey(new Date()), morgen = dayKey(new Date(Date.now() + 864e5));
-  const tagName = d => dayKey(d) === heute ? 'Heute' : dayKey(d) === morgen ? 'Morgen' : d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' });
-  const day = sel('abDay', 'Tag', days.map(d => `<option value="${dayKey(d)}" ${dayKey(d) === dayKey(base) ? 'selected' : ''}>${tagName(d)}</option>`).join(''));
-  const hours = sel('abH', 'Stunde', [...Array(24)].map((_, h) => `<option ${h === base.getHours() ? 'selected' : ''}>${pad2(h)}</option>`).join(''));
-  const mins = [...Array(12)].map((_, i) => i * 5);
-  if (!mins.includes(base.getMinutes())) mins.push(base.getMinutes());
-  const minutes = sel('abM', 'Minute', mins.sort((a, b) => a - b).map(m => `<option ${m === base.getMinutes() ? 'selected' : ''}>${pad2(m)}</option>`).join(''));
-  return `<div class="abrow">
-    <button type="button" class="abchip abPlus" data-min="30">+30 min</button><button type="button" class="abchip abPlus" data-min="60">+1 Std</button><button type="button" class="abchip abPlus" data-min="120">+2 Std</button>
-    <label class="abpill ${set ? 'set' : ''}">${ic('clock')}${day}${hours}<span class="colon">:</span>${minutes}</label>
-    ${set ? '<button type="button" class="abchip abNow">Jetzt</button>' : ''}</div>`;
+  const cur = set ? new Date(startAt) : in5(0);
+  const label = set ? `${tagName(cur)}, ${pad2(cur.getHours())}:${pad2(cur.getMinutes())} Uhr` : 'Jetzt';
+  let panel = '';
+  if (abOpen) {
+    const days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d; });
+    const dayBtns = days.map(d => `<button type="button" class="abDay ${dayKey(d) === dayKey(cur) ? 'on' : ''}" data-v="${dayKey(d)}">${tagName(d)}<small>${d.getDate()}.${d.getMonth() + 1}.</small></button>`).join('');
+    const hours = [...Array(24)].map((_, h) => `<button type="button" class="abH ${h === cur.getHours() ? 'on' : ''}" data-v="${pad2(h)}">${pad2(h)}</button>`).join('');
+    const mins = [...Array(12)].map((_, i) => i * 5).map(m => `<button type="button" class="abM ${m === cur.getMinutes() ? 'on' : ''}" data-v="${pad2(m)}">${pad2(m)}</button>`).join('');
+    panel = `<div class="abpanel" role="dialog" aria-label="Abfahrten ab">
+      <div class="abgroup"><span>Schnellwahl</span><div class="abrowx abquick"><button type="button" class="abNow">Jetzt</button><button type="button" class="abPlus" data-min="30">+30 min</button><button type="button" class="abPlus" data-min="60">+1 Std</button><button type="button" class="abPlus" data-min="120">+2 Std</button></div></div>
+      <div class="abgroup"><span>Tag</span><div class="abrowx abdays">${dayBtns}</div></div>
+      <div class="abgroup"><span>Stunde</span><div class="abgrid">${hours}</div></div>
+      <div class="abgroup"><span>Minute</span><div class="abgrid">${mins}</div></div>
+      <button type="button" class="abdone">Fertig</button></div>`;
+  }
+  box.innerHTML = `<div class="abwrap"><button type="button" class="abpill ${set ? 'set' : ''}" id="abToggle" aria-expanded="${abOpen}" aria-haspopup="dialog">${ic('clock')}<span class="ablabel"><small>Abfahrten ab</small><b>${label}</b></span><span class="abchev">▾</span></button>${
+    set ? `<button type="button" class="abreset abNow" title="Zurück auf jetzt" aria-label="Zurück auf jetzt">${ic('x')}</button>` : ''}${panel}</div>`;
 }
+
+function setStart(v) {
+  startAt = v;
+  renderAb();
+  clearTimeout(abTimer);
+  abTimer = setTimeout(render, 350);                          // mehrere Tipper hintereinander laden nur einmal
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#abbar')) { if (abOpen) { abOpen = false; renderAb(); } return; }
+  const part = (cls, from, to) => { const b = e.target.closest(cls); if (!b) return false; const c = new Date(startAt && !isNaN(new Date(startAt)) ? startAt : in5(0)); from(c, b.dataset.v); setStart(localIso(c)); return true; };
+  if (e.target.closest('#abToggle')) { abOpen = !abOpen; return renderAb(); }
+  if (e.target.closest('.abdone')) { abOpen = false; return renderAb(); }
+  if (e.target.closest('.abNow')) return setStart('');
+  const plus = e.target.closest('.abPlus');
+  if (plus) return setStart(localIso(in5(+plus.dataset.min)));
+  part('.abDay', (c, v) => { const [y, m, d] = v.split('-').map(Number); c.setFullYear(y, m - 1, d); }) ||
+  part('.abH', (c, v) => c.setHours(+v)) ||
+  part('.abM', (c, v) => c.setMinutes(+v));
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && abOpen) { abOpen = false; renderAb(); } });
 
 function boardHtml(stop, deps, error, tag) {
   const list = (deps || []).filter(d => filter === 'all' || kind(d) === filter);
@@ -832,7 +881,6 @@ function boardHtml(stop, deps, error, tag) {
       <button class="star ${isFav(stop.id) ? 'on' : ''}" data-id="${esc(stop.id)}" data-name="${esc(stop.name)}"
         title="Favorit umschalten" aria-label="Favorit umschalten">${ic('star', isFav(stop.id) ? 'fill' : '')}</button>
     </div>
-    ${abHtml()}
     <div class="cols"><div>Zeit</div><div>Nach</div><div>Über</div><div class="gh">Gleis/Steig</div></div>
     <div class="rows">${rows}</div>
   </section>`;
@@ -897,6 +945,7 @@ async function load(stop, tag, myGen) {
 
 let loads = 0;
 async function render() {
+  renderAb();
   $('#refresh').classList.add('loading');
   loads++;
   try { await renderBoards(); } finally { if (--loads === 0) stopSpin(); }
@@ -1020,9 +1069,6 @@ $('#suggest').addEventListener('click', e => {
 });
 
 document.addEventListener('click', e => {
-  if (e.target.closest('.abNow')) { startAt = ''; return render(); }
-  const plus = e.target.closest('.abPlus');
-  if (plus) { startAt = localIso(in5(+plus.dataset.min)); return render(); }
   const alk = e.target.closest('.alertlink');
   if (alk) return showAlerts(depByKey.get(alk.closest('.row')?.dataset.key));
   const tr = e.target.closest('.board .ueber[role="button"]') || (MOBIL.matches && e.target.closest('.board .nach.tripable'));
@@ -1091,13 +1137,7 @@ setInterval(() => {
   const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   document.querySelectorAll('.clock').forEach(c => c.textContent = t);
 }, 1000);
-setInterval(() => { if (!document.activeElement?.classList?.contains('abSel')) render(); }, 60000);
-document.addEventListener('change', e => {
-  if (!e.target.classList?.contains('abSel')) return;
-  const row = e.target.closest('.abrow');
-  startAt = `${row.querySelector('.abDay').value}T${row.querySelector('.abH').value}:${row.querySelector('.abM').value}`;
-  render();
-});
+setInterval(render, 60000);
 
 // ---------- Telegram-Anbindung (nur für verifizierte Nutzer des Bots) ----------
 async function bot(method, path, body) {
