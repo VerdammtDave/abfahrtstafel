@@ -91,6 +91,10 @@
   .menusec { margin: 10px 12px 8px; padding-top: 12px; border-top: 1px solid var(--line, rgba(255,255,255,.15)); font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .65; }
   .themeseg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 0 0 2px; }
   .themeseg .chip { display: flex; align-items: center; justify-content: center; height: 38px; padding: 0 4px; font-size: 14px; white-space: nowrap; }
+  /* Symbol über dem Text, damit nichts aus dem schmalen Menü herausragt (auch im modernen Stil) */
+  .menupanel .themeseg .chip { flex-direction: column; gap: 3px; height: 56px; min-width: 0; padding: 4px 2px; font-size: 12.5px; line-height: 1.1; border-radius: 12px; }
+  .menupanel .themeseg .ico { margin: 0; }
+  .tripmeta { margin: 0 0 6px; font-size: 12.5px; opacity: .7; overflow-wrap: anywhere; }
   #acct.hidden + .menusec { margin-top: 2px; padding-top: 0; border-top: 0; }
   .search { position: relative; flex: 1 1 260px; max-width: 420px; }
   .search input { width: 100%; font: 16px Arial, sans-serif; padding: 5px 8px; border: 2px solid var(--white); background: var(--white); color: #000; border-radius: 0; }
@@ -478,6 +482,9 @@ const MOBIL = matchMedia('(max-width: 700px)');
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '2.0.1', date: '27.10.2026', items: [
+    'Die Darstellungs-Knöpfe im Menü (Klassisch, Dunkel, Hell) sitzen sauber nebeneinander und ragen nicht mehr heraus',
+    'In der Haltliste steht klein dazu, was die Daten hergeben: Zugnummer, Strecke und Betreiber' ] },
   { v: '2.0.0', date: '26.10.2026', items: [
     'Am Handy oben nach unten ziehen lädt die Abfahrten neu, mit drehendem Kreis',
     'Ist ein Fenster offen, bleibt die Seite dahinter stehen. Esc am PC und die Zurück-Taste am Handy schließen das Fenster',
@@ -686,7 +693,10 @@ function tripHtml(d, leg) {
     return `<li class="${cls}"><button type="button" class="stoplink" data-id="${esc(p.stopId || '')}" data-name="${esc(cleanName(p.name))}" ${p.stopId ? '' : 'disabled'}>
       <span class="stime">${zeit}</span><span class="sname">${esc(cleanName(p.name))}${i === here ? `<em${i === naechster ? ' class="nx"' : ''}>hier</em>` : ''}${i === naechster && i !== here ? ' <em class="nx">nächster Halt</em>' : ''}</span><span class="strack">${p.track ? esc(platformLabel(d.mode) + ' ' + p.track) : ''}</span></button></li>`;
   }).join('');
+  const meta = [leg.tripShortName && `Zugnr. ${leg.tripShortName}`, leg.routeLongName, leg.category, leg.agencyName]
+    .filter((v, i, a) => v && a.indexOf(v) === i && v !== d.line?.name).map(esc).join(' · ');
   return `<h3 class="alhead">${ic(d.mode === 'BUS' ? 'bus' : 'train')} ${esc(d.line?.name || '')} → ${esc(d.direction || cleanName(last.name))} ${stand}${live ? '<span class="live" title="Echtzeitdaten">Live</span>' : ''}</h3>
+    ${meta ? `<p class="tripmeta">${meta}</p>` : ''}
     <div class="tripsum">
       <div><span>Von</span><b>${esc(cleanName(first.name))}</b><small>ab ${clock(times[0].real || times[0].plan)}</small></div>
       <div><span>Nach</span><b>${esc(cleanName(last.name))}</b><small>an ${clock(times[times.length - 1].real || times[times.length - 1].plan)}</small></div>
