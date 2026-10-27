@@ -208,6 +208,8 @@ Alle Aufrufe mit `Authorization: Bearer <Sitzung>` (kein Cookie, daher kein CSRF
 | `POST /members/invite` | Besitzer, Admin, Verwalter | neue Einladung |
 | `DELETE /members/invite?code=` | Besitzer, Admin, Verwalter | Einladung widerrufen |
 | `POST /members/role` | Besitzer, Admin, Verwalter | `{"ref", "role": "admin", "verwalter", "mitglied" oder "gast"}`, nur für Personen unter sich, nur Besitzer und Admin, Admins ernennt nur der Besitzer |
+| `POST /routines` | angemeldet | `{"key", "days": [0-6], "weeks": 1-52 oder null}`: macht aus einer verfolgten Fahrt eine wiederkehrende, `weeks` null = unbegrenzt |
+| `DELETE /routines?rid=` | angemeldet | wiederkehrende Fahrt beenden |
 | `DELETE /members?ref=` | Besitzer, Admin, Verwalter | Person rauswerfen, nur unter sich. Der Besitzer geht nie |
 
 Mitglieder deaktivieren (ohne zu entfernen) gibt es nicht, es bleibt beim Entfernen.

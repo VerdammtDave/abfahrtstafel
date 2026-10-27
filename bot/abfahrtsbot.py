@@ -453,6 +453,8 @@ def check_trip(cid, chat, w, fetched, now, outbox):
     deps = fetched.get(w["stop"])
     if deps is None:
         return
+    if time.time() - w.get("since", 0) < TRACK_GRACE:
+        return                                           # gerade erst verfolgt: noch keine Meldung (siehe send_first_status_later)
     state = data["state"].setdefault(cid, {})
     skey = "w_" + w["wid"]
     d = next((x for x in deps if x["key"] == w["key"]), None)
@@ -1354,6 +1356,20 @@ def refresh_status(cid, mid, w):
         log("Aktualisieren ohne Aenderung:", e)          # Telegram meldet einen Fehler, wenn der Text gleich bleibt
 
 
+TRACK_GRACE = 10          # so viele Sekunden muss eine Fahrt verfolgt sein, bevor der Bot schreibt (Tippfehler bleiben stumm)
+
+
+def send_first_status_later(cid, w):
+    """Erst nach TRACK_GRACE Sekunden den Stand schicken, und nur wenn die Fahrt dann noch verfolgt wird."""
+    def run():
+        time.sleep(TRACK_GRACE)
+        with lock:
+            noch = any(t["key"] == w["key"] and t.get("since") == w.get("since") for t in get_chat(cid)["trips"])
+        if noch:
+            send_first_status(cid, w)
+    threading.Thread(target=run, daemon=True).start()
+
+
 def send_first_status(cid, w, event="status"):
     """Aktuellen Stand der gerade gewaehlten Fahrt sofort schicken und als Ausgangslage merken."""
     d = None
@@ -1403,9 +1419,45 @@ def days_keyboard(wid, days):
     ]}
 
 
+def until_label(r):
+    """Enddatum einer wiederkehrenden Fahrt als 'bis 12.11.', leer wenn sie unbegrenzt gilt."""
+    if not r.get("until"):
+        return ""
+    try:
+        return "bis " + datetime.strptime(r["until"], "%Y-%m-%d").strftime("%d.%m.")
+    except ValueError:
+        return ""
+
+
 def routine_text(r):
+    ende = until_label(r)
     return (f"{r['line']} \u2192 {r['dest']}\n\U0001f4cd {r['stop_name']}\n"
-            f"\U0001f550 {r['hhmm']} Uhr \u00b7 {days_label(r['days'])}")
+            f"\U0001f550 {r['hhmm']} Uhr \u00b7 {days_label(r['days'])}" + (f" \u00b7 {ende}" if ende else ""))
+
+
+MAX_ROUTINES = 30                 # wiederkehrende Fahrten pro Person
+
+
+def save_routine(chat, w, days, until=None):
+    """Wiederkehrende Fahrt aus einer verfolgten Fahrt anlegen oder aktualisieren (Aufrufer haelt den Lock).
+    until: letzter Tag als 'JJJJ-MM-TT' oder None fuer unbegrenzt."""
+    local_planned = local(datetime.fromtimestamp(w["planned"], timezone.utc))
+    line = re.sub(r"\s*\(\d+\)$", "", w["line"])
+    hhmm_s = local_planned.strftime("%H:%M")
+    rid = short_id(f"{w['stop']}|{line}|{w['dest']}|{hhmm_s}")
+    r = next((x for x in chat["routines"] if x["rid"] == rid), None)
+    if r:
+        r["days"] = days
+    else:
+        r = {"rid": rid, "stop": w["stop"], "stop_name": w["stop_name"], "line": line, "dest": w["dest"],
+             "kind": w["kind"], "hhmm": hhmm_s, "days": days, "last": ""}
+        chat["routines"].append(r)
+    if until:
+        r["until"] = until
+    else:
+        r.pop("until", None)
+    r["last"] = local_planned.strftime("%Y-%m-%d")   # die gerade verfolgte Fahrt zaehlt fuer heute schon
+    return r
 
 
 def cmd_wiederkehrend(cid):
@@ -1453,19 +1505,7 @@ def handle_routine_callback(cb, cid, mid, action, rest):
             data["menus"].pop("r" + wid, None)
             edit = ("Abgebrochen.", None)
         elif action == "rs":
-            w = menu["w"]
-            local_planned = local(datetime.fromtimestamp(w["planned"], timezone.utc))
-            line = re.sub(r"\s*\(\d+\)$", "", w["line"])
-            hhmm_s = local_planned.strftime("%H:%M")
-            rid = short_id(f"{w['stop']}|{line}|{w['dest']}|{hhmm_s}")
-            r = next((x for x in chat["routines"] if x["rid"] == rid), None)
-            if r:
-                r["days"] = menu["days"]
-            else:
-                r = {"rid": rid, "stop": w["stop"], "stop_name": w["stop_name"], "line": line, "dest": w["dest"],
-                     "kind": w["kind"], "hhmm": hhmm_s, "days": menu["days"], "last": ""}
-                chat["routines"].append(r)
-            r["last"] = local_planned.strftime("%Y-%m-%d")   # die gerade verfolgte Fahrt zaehlt fuer heute schon
+            r = save_routine(chat, menu["w"], menu["days"])
             data["menus"].pop("r" + wid, None)
             answer = "Gespeichert"
             edit = (f"\u2705 Wiederkehrende Fahrt gespeichert\n{routine_text(r)}\n\n"
@@ -1502,7 +1542,16 @@ def check_routines():
     lnow = local(datetime.now(timezone.utc))
     today = lnow.strftime("%Y-%m-%d")
     todo = []
+    abgelaufen = []
     with lock:
+        for cid, chat in data["chats"].items():
+            alt = chat.get("routines", [])
+            vorbei = [r for r in alt if r.get("until") and r["until"] < today]       # Enddatum erreicht
+            if vorbei:
+                chat["routines"] = [r for r in alt if r not in vorbei]
+                abgelaufen += [(cid, r) for r in vorbei]
+        if abgelaufen:
+            save()
         for cid, chat in data["chats"].items():
             if chat.get("paused"):
                 continue
@@ -1513,6 +1562,8 @@ def check_routines():
                 mins = (lnow.replace(hour=h, minute=m, second=0, microsecond=0) - lnow).total_seconds() / 60
                 if -2 <= mins <= cfg["routine_lead_min"]:
                     todo.append((cid, dict(r), mins))
+    for cid, r in abgelaufen:
+        send(cid, f"\U0001f501 Diese wiederkehrende Fahrt ist abgelaufen und wurde entfernt:\n{routine_text(r)}")
     cache = {}
     for cid, r, mins in todo:
         try:
@@ -2064,7 +2115,7 @@ def handle_callback(cb):
                     chat["trips"].append({
                         "wid": short_id(it["key"]), "key": it["key"], "stop": entry["stop"]["id"],
                         "stop_name": entry["stop"]["name"], "line": it["line"], "dest": it["dest"],
-                        "kind": it["kind"], "planned": it["planned"]})
+                        "kind": it["kind"], "planned": it["planned"], "since": time.time()})
                     new_watch = chat["trips"][-1]
                     answer = "Wird beobachtet"
                 menu_kb = deps_keyboard(chat, dsid, entry["items"])
@@ -2151,7 +2202,7 @@ def handle_callback(cb):
     except Exception as e:
         log("Callback-Antwort fehlgeschlagen:", e)
     if new_watch:
-        send_first_status(cid, new_watch)
+        send_first_status_later(cid, new_watch)
 
 
 def handle_update(u):
@@ -2308,8 +2359,8 @@ def web_trips(cid, chat):
                       "cancelled": bool(st.get("cancelled")), "platform": w.get("platform", ""),
                       "platform_label": w.get("platform_label", ""), "via": w.get("via", ""),
                       "mode_name": w.get("mode_name", "")})
-    routines = [{"line": r["line"], "dest": r["dest"], "stop_name": r["stop_name"], "hhmm": r["hhmm"],
-                 "days": days_label(r["days"])} for r in chat["routines"]]
+    routines = [{"rid": r["rid"], "line": r["line"], "dest": r["dest"], "stop_name": r["stop_name"], "hhmm": r["hhmm"],
+                 "days": days_label(r["days"]), "until": until_label(r)} for r in chat["routines"]]
     return {"trips": sorted(trips, key=lambda t: t["planned"]), "routines": routines}
 
 
@@ -2444,6 +2495,29 @@ def web_route(method, path, q, body, auth, meta=None):
             elif not (method == "GET" and path == "/favs"):
                 return 404, {"error": "unbekannt"}
             return 200, {"favs": web_favs(chat)}
+    if path == "/routines" and method in ("POST", "DELETE"):
+        with lock:
+            chat = get_chat(cid)
+            if method == "DELETE":
+                rid = q.get("rid", [""])[0]
+                chat["routines"][:] = [r for r in chat["routines"] if r["rid"] != rid]
+            else:
+                days = body.get("days")
+                weeks = body.get("weeks")
+                if not isinstance(days, list) or not days or not all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6 for d in days):
+                    raise ValueError("ungültige Eingabe")
+                if weeks is not None and not (isinstance(weeks, int) and not isinstance(weeks, bool) and 1 <= weeks <= 52):
+                    raise ValueError("ungültige Eingabe")
+                w = next((t for t in chat["trips"] if t["key"] == clean_str(body.get("key"), 400)), None)
+                if not w:
+                    return 404, {"error": "Die Fahrt wird nicht mehr verfolgt"}
+                if len(chat["routines"]) >= MAX_ROUTINES and not any(r["stop"] == w["stop"] and r["dest"] == w["dest"] for r in chat["routines"]):
+                    return 429, {"error": "zu viele wiederkehrende Fahrten"}
+                heute = local(datetime.now(timezone.utc))
+                until = (heute + timedelta(days=7 * weeks)).strftime("%Y-%m-%d") if weeks else None
+                save_routine(chat, w, sorted(set(days)), until)
+            save()
+            return 200, web_trips(cid, chat)
     if path == "/trips":
         if method == "GET":
             with lock:
@@ -2461,6 +2535,7 @@ def web_route(method, path, q, body, auth, meta=None):
             if w["kind"] not in ("bus", "bahn") or not isinstance(w["planned"], (int, float)):
                 raise ValueError("ungültige Eingabe")
             w["wid"] = short_id(w["key"])
+            w["since"] = time.time()
             with lock:
                 chat = get_chat(cid)
                 new = not any(t["key"] == w["key"] for t in chat["trips"])
@@ -2470,7 +2545,7 @@ def web_route(method, path, q, body, auth, meta=None):
                     chat["trips"].append(w)
                     save()
             if new:
-                threading.Thread(target=send_first_status, args=(cid, w), daemon=True).start()
+                send_first_status_later(cid, w)
             return 200, {}
         if method == "DELETE":
             key = q.get("key", [""])[0]

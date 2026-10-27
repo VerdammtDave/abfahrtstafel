@@ -385,6 +385,73 @@ def test_web_einstellungen():
     pruefe(web("GET", "/settings", m)[1]["admin"] is False, "Mitglied wurde Admin")
 
 
+def test_web_wiederkehrend():
+    neu()
+    bot.save = lambda: None
+    sent = []
+    bot.send = lambda cid, text, **k: sent.append((cid, str(text)))
+    m = session(MITGLIED, "m")
+    plan = __import__("time").time() + 3600
+    bot.get_chat(MITGLIED)["trips"].append({"wid": "w1", "key": "k1", "stop": "s", "stop_name": "Halt", "line": "S1", "dest": "Ziel", "kind": "bahn", "planned": plan})
+    pruefe(web("POST", "/routines", "", {"key": "k1", "days": [0], "weeks": 2})[0] == 401, "Wiederkehrend ohne Anmeldung")
+    code, out = web("POST", "/routines", m, {"key": "k1", "days": [4, 0, 0], "weeks": 2})
+    r = out["routines"][0] if code == 200 and out["routines"] else {}
+    pruefe(code == 200 and r.get("days") == "Mo, Fr" and r.get("until", "").startswith("bis "), f"Wiederkehrende Fahrt nicht gespeichert: {code} {out}")
+    code, out = web("POST", "/routines", m, {"key": "k1", "days": [0, 1, 2, 3, 4], "weeks": None})
+    pruefe(code == 200 and len(out["routines"]) == 1 and out["routines"][0]["until"] == "", "unbegrenzt ersetzt die Fahrt nicht")
+    for schlecht in ({"key": "k1", "days": [], "weeks": 1}, {"key": "k1", "days": [7], "weeks": 1}, {"key": "k1", "days": [True], "weeks": 1},
+                     {"key": "k1", "days": [0], "weeks": 0}, {"key": "k1", "days": [0], "weeks": "2"}, {"key": "k1", "days": "0", "weeks": 1}):
+        try:
+            web("POST", "/routines", m, schlecht)
+            pruefe(False, f"ungueltige Eingabe angenommen: {schlecht}")
+        except ValueError:
+            pass
+    pruefe(web("POST", "/routines", m, {"key": "fremd", "days": [0], "weeks": 1})[0] == 404, "Fahrt, die nicht verfolgt wird, wurde Routine")
+    fremd = session(ADMIN, "a")
+    pruefe(web("POST", "/routines", fremd, {"key": "k1", "days": [0], "weeks": 1})[0] == 404, "fremde verfolgte Fahrt benutzt")
+    rid = out["routines"][0]["rid"]
+    web("DELETE", "/routines", fremd, None, {"rid": [rid]})
+    pruefe(len(bot.get_chat(MITGLIED)["routines"]) == 1, "fremde Routine geloescht")
+    # Ablauf: abgelaufene Routinen verschwinden mit Meldung
+    bot.get_chat(MITGLIED)["routines"][0]["until"] = "2000-01-01"
+    bot.check_routines()
+    pruefe(not bot.get_chat(MITGLIED)["routines"] and any("abgelaufen" in t for _, t in sent), "abgelaufene Routine bleibt")
+    web("POST", "/routines", m, {"key": "k1", "days": [0], "weeks": 1})
+    web("DELETE", "/routines", m, None, {"rid": [bot.get_chat(MITGLIED)["routines"][0]["rid"]]})
+    pruefe(not bot.get_chat(MITGLIED)["routines"], "Routine nicht loeschbar")
+
+
+def test_erst_nach_zehn_sekunden_melden():
+    """Wer eine Fahrt gleich wieder abschaltet (Tippfehler), bekommt keine Nachricht."""
+    import threading, time
+    neu()
+    bot.save = lambda: None
+    ersten = []
+    alt = bot.send_first_status, bot.TRACK_GRACE
+    bot.send_first_status = lambda cid, w, event="status": ersten.append(w["key"])
+    bot.TRACK_GRACE = 0.3
+    try:
+        for bleibt in (False, True):
+            ersten.clear()
+            w = {"wid": "w1", "key": "k1", "stop": "s", "stop_name": "H", "line": "S1", "dest": "Z", "kind": "bahn", "planned": time.time() + 600, "since": time.time()}
+            bot.get_chat(MITGLIED)["trips"][:] = [w]
+            bot.send_first_status_later(MITGLIED, w)
+            if not bleibt:
+                bot.get_chat(MITGLIED)["trips"][:] = []
+            time.sleep(0.2)
+            pruefe(not ersten, "Nachricht kam schon vor Ablauf der Wartezeit")
+            time.sleep(0.4)
+            pruefe(bool(ersten) == bleibt, f"Nachricht nach Wartezeit falsch (bleibt={bleibt}, gesendet={ersten})")
+        # die Ueberwachung schweigt waehrend der Wartezeit
+        w = {"wid": "w2", "key": "k2", "stop": "s", "stop_name": "H", "line": "S1", "dest": "Z", "kind": "bahn", "planned": time.time() + 600, "since": time.time()}
+        bot.TRACK_GRACE = 10
+        box = []
+        bot.check_trip(str(MITGLIED), bot.get_chat(MITGLIED), w, {"s": [{"key": "k2"}]}, bot.datetime.now(bot.timezone.utc), box)
+        pruefe(not box and str(MITGLIED) not in bot.data["state"], "Ueberwachung arbeitet in der Wartezeit")
+    finally:
+        bot.send_first_status, bot.TRACK_GRACE = alt
+
+
 def test_web_mitglieder():
     neu()
     bot.data["guests"] = [GAST]
