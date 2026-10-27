@@ -1356,7 +1356,7 @@ def refresh_status(cid, mid, w):
         log("Aktualisieren ohne Aenderung:", e)          # Telegram meldet einen Fehler, wenn der Text gleich bleibt
 
 
-TRACK_GRACE = 10          # so viele Sekunden muss eine Fahrt verfolgt sein, bevor der Bot schreibt (Tippfehler bleiben stumm)
+TRACK_GRACE = 5           # so viele Sekunden muss eine Fahrt verfolgt sein, bevor der Bot schreibt (Tippfehler bleiben stumm)
 
 
 def send_first_status_later(cid, w):

@@ -444,7 +444,7 @@ def test_erst_nach_zehn_sekunden_melden():
             pruefe(bool(ersten) == bleibt, f"Nachricht nach Wartezeit falsch (bleibt={bleibt}, gesendet={ersten})")
         # die Ueberwachung schweigt waehrend der Wartezeit
         w = {"wid": "w2", "key": "k2", "stop": "s", "stop_name": "H", "line": "S1", "dest": "Z", "kind": "bahn", "planned": time.time() + 600, "since": time.time()}
-        bot.TRACK_GRACE = 10
+        bot.TRACK_GRACE = 5
         box = []
         bot.check_trip(str(MITGLIED), bot.get_chat(MITGLIED), w, {"s": [{"key": "k2"}]}, bot.datetime.now(bot.timezone.utc), box)
         pruefe(not box and str(MITGLIED) not in bot.data["state"], "Ueberwachung arbeitet in der Wartezeit")
