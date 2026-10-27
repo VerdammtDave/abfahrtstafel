@@ -96,16 +96,20 @@
   .menupanel .themeseg .ico { margin: 0; }
   .tripsum .tripnr { grid-column: 1 / -1; }
   .tripsum .tripnr small { opacity: .65; font-size: 12.5px; }
-  /* „Abfahrten ab“: eine Pille mit Uhr-Symbol, bei gesetzter Zeit in der Akzentfarbe */
+  /* „Abfahrten ab“: Schnellwahl (+30 min …) und eine Pille mit Tag, Stunde und Minute aus Auswahllisten */
   .abrow { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px 6px; font-size: 14px; }
-  .abpill { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 6px 0 14px; border-radius: 999px; box-sizing: border-box;
-    background: var(--surface, rgba(255,255,255,.1)); border: 1px solid var(--border, rgba(255,255,255,.35)); color: var(--white); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .abpill { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 8px 0 12px; border-radius: 999px; box-sizing: border-box;
+    background: var(--surface, rgba(255,255,255,.1)); border: 1px solid var(--border, rgba(255,255,255,.35)); color: var(--white); transition: border-color .15s, box-shadow .15s; }
   .abpill:hover, .abpill:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring, transparent); }
   .abpill.set { border-color: var(--accent); }
-  .abpill .ic { width: 18px; height: 18px; flex: none; }
-  .abpill input { font: inherit; font-size: 14px; border: 0; background: none; color: inherit; padding: 0 8px 0 0; height: 100%; outline: none; color-scheme: light dark; cursor: pointer; }
-  .abrow button { margin: 0; height: 38px; padding: 0 16px; font-size: 13.5px; border-radius: 999px; background: var(--accent); color: var(--tab-on); border: 0; font-weight: 600; }
-  @media (max-width: 700px) { .abpill { flex: 1 1 auto; justify-content: center; } }
+  .abpill .ic { width: 17px; height: 17px; flex: none; margin-right: 4px; }
+  .abpill select { font: inherit; font-size: 14px; border: 0; background: none; color: inherit; padding: 4px 2px; cursor: pointer; outline: none; appearance: none; -webkit-appearance: none; text-align: center; color-scheme: light dark; }
+  .abpill select option { color: #111; background: #fff; }
+  .abpill .colon { opacity: .6; }
+  .abrow .abchip { margin: 0; height: 36px; padding: 0 13px; font-size: 13.5px; border-radius: 999px; background: none; color: inherit; border: 1px solid var(--border, rgba(255,255,255,.35)); }
+  .abrow .abchip:hover { border-color: var(--accent); }
+  .abrow .abNow { background: var(--accent); color: var(--tab-on); border-color: transparent; font-weight: 600; }
+  @media (max-width: 700px) { .abrow { gap: 6px; padding-left: 8px; padding-right: 8px; } .abrow .abchip { padding: 0 10px; } }
   #acct.hidden + .menusec { margin-top: 2px; padding-top: 0; border-top: 0; }
   .search { position: relative; flex: 1 1 260px; max-width: 420px; }
   .search input { width: 100%; font: 16px Arial, sans-serif; padding: 5px 8px; border: 2px solid var(--white); background: var(--white); color: #000; border-radius: 0; }
@@ -498,7 +502,7 @@ const UPDATES = [
     'Fernbusse wie Flixbus gelten jetzt als Bus (Symbol, Filter, „Steig“ statt „Gleis“) und nicht mehr als Zug',
     'Zugnummer steht nur noch in den Details der Fahrt und heißt bei Bussen „Fahrtnummer“',
     'Das Telegram-Profilbild lädt zuverlässiger und bleibt zwischengespeichert',
-    'Die Zeitauswahl „Abfahrten ab“ sieht jetzt aus wie ein runder Knopf mit Uhr-Symbol' ] },
+    'Die Zeitauswahl „Abfahrten ab“ hat Schnellwahl (+30 min, +1 Std, +2 Std) und Auswahllisten für Tag, Stunde und Minute statt des Standard-Kalenders' ] },
   { v: '2.0.1', date: '27.10.2026', items: [
     'Die Darstellungs-Knöpfe im Menü (Klassisch, Dunkel, Hell) sitzen sauber nebeneinander und ragen nicht mehr heraus',
     'In der Haltliste steht klein dazu, was die Daten hergeben: Zugnummer, Strecke und Betreiber' ] },
@@ -792,6 +796,30 @@ function rowHtml(d, idx) {
   </div>`;
 }
 
+// „Abfahrten ab“: Tag, Stunde und Minute wählen oder eine Schnellwahl antippen
+const pad2 = n => String(n).padStart(2, '0');
+const dayKey = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const localIso = d => `${dayKey(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const in5 = min => new Date(Math.ceil((Date.now() + min * 60000) / 300000) * 300000);   // auf volle 5 Minuten aufgerundet
+function abHtml() {
+  const set = startAt && !isNaN(new Date(startAt));
+  const base = set ? new Date(startAt) : in5(0);
+  const days = [...Array(8)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d; });
+  if (!days.some(d => dayKey(d) === dayKey(base))) days.unshift(base);
+  const sel = (cls, label, opts) => `<select class="abSel ${cls}" aria-label="${label}">${opts}</select>`;
+  const heute = dayKey(new Date()), morgen = dayKey(new Date(Date.now() + 864e5));
+  const tagName = d => dayKey(d) === heute ? 'Heute' : dayKey(d) === morgen ? 'Morgen' : d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' });
+  const day = sel('abDay', 'Tag', days.map(d => `<option value="${dayKey(d)}" ${dayKey(d) === dayKey(base) ? 'selected' : ''}>${tagName(d)}</option>`).join(''));
+  const hours = sel('abH', 'Stunde', [...Array(24)].map((_, h) => `<option ${h === base.getHours() ? 'selected' : ''}>${pad2(h)}</option>`).join(''));
+  const mins = [...Array(12)].map((_, i) => i * 5);
+  if (!mins.includes(base.getMinutes())) mins.push(base.getMinutes());
+  const minutes = sel('abM', 'Minute', mins.sort((a, b) => a - b).map(m => `<option ${m === base.getMinutes() ? 'selected' : ''}>${pad2(m)}</option>`).join(''));
+  return `<div class="abrow">
+    <button type="button" class="abchip abPlus" data-min="30">+30 min</button><button type="button" class="abchip abPlus" data-min="60">+1 Std</button><button type="button" class="abchip abPlus" data-min="120">+2 Std</button>
+    <label class="abpill ${set ? 'set' : ''}">${ic('clock')}${day}${hours}<span class="colon">:</span>${minutes}</label>
+    ${set ? '<button type="button" class="abchip abNow">Jetzt</button>' : ''}</div>`;
+}
+
 function boardHtml(stop, deps, error, tag) {
   const list = (deps || []).filter(d => filter === 'all' || kind(d) === filter);
   const rows = error ? `<div class="msg">Fehler beim Laden: ${esc(error)}</div>`
@@ -804,7 +832,7 @@ function boardHtml(stop, deps, error, tag) {
       <button class="star ${isFav(stop.id) ? 'on' : ''}" data-id="${esc(stop.id)}" data-name="${esc(stop.name)}"
         title="Favorit umschalten" aria-label="Favorit umschalten">${ic('star', isFav(stop.id) ? 'fill' : '')}</button>
     </div>
-    <div class="abrow"><label class="abpill ${startAt ? 'set' : ''}">${ic('clock')}<span>Ab</span><input type="datetime-local" class="abTime" value="${esc(startAt)}" aria-label="Abfahrten ab Datum und Uhrzeit"></label>${startAt ? '<button type="button" class="abNow">Jetzt</button>' : ''}</div>
+    ${abHtml()}
     <div class="cols"><div>Zeit</div><div>Nach</div><div>Über</div><div class="gh">Gleis/Steig</div></div>
     <div class="rows">${rows}</div>
   </section>`;
@@ -993,6 +1021,8 @@ $('#suggest').addEventListener('click', e => {
 
 document.addEventListener('click', e => {
   if (e.target.closest('.abNow')) { startAt = ''; return render(); }
+  const plus = e.target.closest('.abPlus');
+  if (plus) { startAt = localIso(in5(+plus.dataset.min)); return render(); }
   const alk = e.target.closest('.alertlink');
   if (alk) return showAlerts(depByKey.get(alk.closest('.row')?.dataset.key));
   const tr = e.target.closest('.board .ueber[role="button"]') || (MOBIL.matches && e.target.closest('.board .nach.tripable'));
@@ -1061,10 +1091,11 @@ setInterval(() => {
   const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   document.querySelectorAll('.clock').forEach(c => c.textContent = t);
 }, 1000);
-setInterval(() => { if (!document.activeElement?.classList?.contains('abTime')) render(); }, 60000);
+setInterval(() => { if (!document.activeElement?.classList?.contains('abSel')) render(); }, 60000);
 document.addEventListener('change', e => {
-  if (!e.target.classList?.contains('abTime')) return;
-  startAt = e.target.value;
+  if (!e.target.classList?.contains('abSel')) return;
+  const row = e.target.closest('.abrow');
+  startAt = `${row.querySelector('.abDay').value}T${row.querySelector('.abH').value}:${row.querySelector('.abM').value}`;
   render();
 });
 
