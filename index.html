@@ -121,14 +121,24 @@
   .abpanel button:hover { border-color: var(--accent); }
   .abpanel button.on { background: var(--accent); color: var(--tab-on); font-weight: 700; }
   .abpanel .abquick button { border-radius: 999px; border-color: var(--border, rgba(255,255,255,.3)); }
-  /* Walzen wie am Handy-Wecker: wischen oder scrollen, die Zeile in der Mitte gilt */
-  .abwheel { position: relative; display: grid; grid-template-columns: 1.7fr 1fr 1fr; gap: 4px; height: 200px; margin-top: 12px; }
-  .abwheel .abband { position: absolute; left: 0; right: 0; top: 80px; height: 40px; border-radius: 12px; background: var(--surface-hi, rgba(255,255,255,.14)); pointer-events: none; }
-  .abcol { position: relative; z-index: 1; overflow-y: auto; scroll-snap-type: y mandatory; padding: 80px 0; scrollbar-width: none; overscroll-behavior: contain;
-    -webkit-mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent); mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent); }
-  .abcol::-webkit-scrollbar { display: none; }
-  .abit { height: 40px; display: flex; align-items: center; justify-content: center; scroll-snap-align: center; font-size: 18px; opacity: .4; cursor: pointer; user-select: none; transition: opacity .15s; }
-  .abit.on { opacity: 1; font-weight: 700; }
+  /* Tag zum Antippen, Uhrzeit zum Eintippen. Übernommen wird erst mit „Fertig“ */
+  .abpanel .abgroup { margin-top: 14px; }
+  .abpanel .abgroup > span { display: block; margin: 0 0 6px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .65; }
+  .abpanel .abrowx { display: flex; flex-wrap: wrap; gap: 6px; }
+  .abpanel button { margin: 0; min-height: 38px; padding: 4px 12px; font-size: 14px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); color: inherit; border: 1px solid transparent; }
+  .abpanel button:hover { border-color: var(--accent); }
+  .abpanel button.on { background: var(--accent); color: var(--tab-on); font-weight: 700; }
+  .abpanel .abquick button { border-radius: 999px; border-color: var(--border, rgba(255,255,255,.3)); }
+  .abpanel .abquick button.on { border-color: transparent; }
+  .abdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .abpanel .abdays button { min-width: 0; padding: 4px 0; font-size: 13px; line-height: 1.2; }
+  .abpanel .abdays button small { display: block; font-size: 11px; opacity: .7; }
+  .abtime { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .abtime input { width: 6.2ch; font: inherit; font-size: 34px; font-weight: 700; text-align: center; letter-spacing: .02em; padding: 6px 12px; box-sizing: content-box;
+    border-radius: 14px; border: 1px solid var(--border, rgba(255,255,255,.35)); background: var(--surface, rgba(255,255,255,.08)); color: inherit; outline: none; }
+  .abtime input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring, transparent); }
+  .abtime input.bad { border-color: #ff6b61; }
+  .abtime span { opacity: .7; font-size: 16px; }
   .abpanel .abdone { width: 100%; margin-top: 14px; background: var(--accent); color: var(--tab-on); font-weight: 600; }
   #acct.hidden + .menusec { margin-top: 2px; padding-top: 0; border-top: 0; }
   .search { position: relative; flex: 1 1 260px; max-width: 420px; }
@@ -543,7 +553,7 @@ const UPDATES = [
     'Fernbusse wie Flixbus gelten jetzt als Bus (Symbol, Filter, „Steig“ statt „Gleis“) und nicht mehr als Zug',
     'Zugnummer steht nur noch in den Details der Fahrt und heißt bei Bussen „Fahrtnummer“',
     'Das Telegram-Profilbild lädt zuverlässiger und bleibt zwischengespeichert',
-    '„Abfahrten ab“ ist jetzt ein Knopf unter der Leiste. Er öffnet drei Walzen wie beim Handy-Wecker (Tag, Stunde, Minute) und eine Schnellwahl (+30 min, +1 Std, +2 Std)' ] },
+    '„Abfahrten ab“ ist jetzt ein Knopf unter der Leiste. Du tippst den Tag an und die Uhrzeit ein (z. B. 1430) oder nimmst eine Schnellwahl (+30 min, +1 Std, +2 Std). Übernommen wird erst mit „Fertig“, wegklicken verwirft' ] },
   { v: '2.0.1', date: '27.10.2026', items: [
     'Die Darstellungs-Knöpfe im Menü (Klassisch, Dunkel, Hell) sitzen sauber nebeneinander und ragen nicht mehr heraus',
     'In der Haltliste steht klein dazu, was die Daten hergeben: Zugnummer, Strecke und Betreiber' ] },
@@ -846,78 +856,89 @@ const tagName = d => dayKey(d) === dayKey(new Date()) ? 'Heute' : dayKey(d) === 
   : d.toLocaleDateString('de-DE', { weekday: 'short' }).replace('.', '');
 let abOpen = false, abTimer = null;
 
-const AB_ROW = 40;
-let abQuiet = 0;
 const abDays = () => [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() + i); return d; });
-const abCur = () => new Date(startAt && !isNaN(new Date(startAt)) ? startAt : in5(0));
-const abLabel = () => startAt && !isNaN(new Date(startAt)) ? `${tagName(abCur())}, ${pad2(abCur().getHours())}:${pad2(abCur().getMinutes())} Uhr` : 'Jetzt';
+let abDraft = null;                                          // Entwurf im offenen Feld: { d: Date, now: Boolean }, gilt erst nach „Fertig“
+const abSet = () => startAt && !isNaN(new Date(startAt));
+const abLabel = () => { if (!abSet()) return 'Jetzt'; const c = new Date(startAt); return `${tagName(c)}, ${pad2(c.getHours())}:${pad2(c.getMinutes())} Uhr`; };
 
 function renderAb() {
   const box = $('#abbar');
   const show = view === 'board' || (view === 'favs' && favSel);
   box.classList.toggle('hidden', !show);
   if (!show) return;
-  const set = startAt && !isNaN(new Date(startAt));
-  const cur = abCur();
   let panel = '';
-  if (abOpen) {
-    const col = (cls, items, idx) => `<div class="abcol ${cls}" data-i="${idx}">${items.map((t, i) => `<div class="abit ${i === idx ? 'on' : ''}" data-i="${i}">${t}</div>`).join('')}</div>`;
-    const days = abDays();
-    const di = Math.max(0, days.findIndex(d => dayKey(d) === dayKey(cur)));
-    const dayTxt = days.map(d => dayKey(d) === dayKey(new Date()) || dayKey(d) === dayKey(new Date(Date.now() + 864e5)) ? tagName(d) : `${tagName(d)} ${d.getDate()}.${d.getMonth() + 1}.`);
+  if (abOpen && abDraft) {
+    const c = abDraft.d;
+    const days = abDays().map(d => `<button type="button" class="abDay ${!abDraft.now && dayKey(d) === dayKey(c) ? 'on' : ''}" data-v="${dayKey(d)}">${tagName(d)}<small>${d.getDate()}.${d.getMonth() + 1}.</small></button>`).join('');
     panel = `<div class="abpanel" role="dialog" aria-label="Abfahrten ab">
-      <div class="abrowx abquick"><button type="button" class="abNow">Jetzt</button><button type="button" class="abPlus" data-min="30">+30 min</button><button type="button" class="abPlus" data-min="60">+1 Std</button><button type="button" class="abPlus" data-min="120">+2 Std</button></div>
-      <div class="abwheel"><div class="abband"></div>${col('abDay', dayTxt, di)}${col('abH', [...Array(24)].map((_, h) => pad2(h)), cur.getHours())}${col('abM', [...Array(12)].map((_, m) => pad2(m * 5)), Math.round(cur.getMinutes() / 5) % 12)}</div>
+      <div class="abrowx abquick"><button type="button" class="abNowD ${abDraft.now ? 'on' : ''}">Jetzt</button><button type="button" class="abPlus" data-min="30">+30 min</button><button type="button" class="abPlus" data-min="60">+1 Std</button><button type="button" class="abPlus" data-min="120">+2 Std</button></div>
+      <div class="abgroup"><span>Tag</span><div class="abdays">${days}</div></div>
+      <div class="abgroup"><span>Uhrzeit</span><div class="abtime"><input class="abTimeIn" inputmode="numeric" maxlength="5" autocomplete="off" value="${abDraft.now ? '' : pad2(c.getHours()) + ':' + pad2(c.getMinutes())}" placeholder="${pad2(c.getHours())}:${pad2(c.getMinutes())}" aria-label="Uhrzeit, zum Beispiel 1430"><span>Uhr</span></div></div>
       <button type="button" class="abdone">Fertig</button></div>`;
   }
-  box.innerHTML = `<div class="abwrap"><button type="button" class="abpill ${set ? 'set' : ''}" id="abToggle" aria-expanded="${abOpen}" aria-haspopup="dialog">${ic('clock')}<span class="ablabel"><small>Abfahrten ab</small><b>${abLabel()}</b></span><span class="abchev">▾</span></button>${
-    set ? `<button type="button" class="abreset abNow" title="Zurück auf jetzt" aria-label="Zurück auf jetzt">${ic('x')}</button>` : ''}${panel}</div>`;
-  box.querySelectorAll('.abcol').forEach(c => { c.scrollTop = c.dataset.i * AB_ROW; });
-  abQuiet = Date.now() + 500;                                // das Setzen der Walzen zählt nicht als Auswahl
+  box.innerHTML = `<div class="abwrap"><button type="button" class="abpill ${abSet() ? 'set' : ''}" id="abToggle" aria-expanded="${abOpen}" aria-haspopup="dialog">${ic('clock')}<span class="ablabel"><small>Abfahrten ab</small><b>${abLabel()}</b></span><span class="abchev">▾</span></button>${
+    abSet() ? `<button type="button" class="abreset abNow" title="Zurück auf jetzt" aria-label="Zurück auf jetzt">${ic('x')}</button>` : ''}${panel}</div>`;
 }
 
-// Eine Walze ist zur Ruhe gekommen: die Zeile in der Mitte wird zur Auswahl
-function abPick(c) {
-  const i = Math.max(0, Math.min(c.children.length - 1, Math.round(c.scrollTop / AB_ROW)));
-  c.querySelectorAll('.abit').forEach((el, k) => el.classList.toggle('on', k === i));
-  const d = abCur();
-  if (c.classList.contains('abDay')) { const t = abDays()[i]; d.setFullYear(t.getFullYear(), t.getMonth(), t.getDate()); }
-  else if (c.classList.contains('abH')) d.setHours(i);
-  else d.setMinutes(i * 5);
-  const iso = localIso(d);
-  if (iso === startAt) return;
-  const warSet = !!startAt;
-  startAt = iso;
-  clearTimeout(abTimer);
-  abTimer = setTimeout(render, 450);
-  if (!warSet) return renderAb();                           // der Zurück-Knopf kommt dazu
-  const b = $('#abbar .ablabel b'); if (b) b.textContent = abLabel();
-}
-document.addEventListener('scroll', e => {
-  const c = e.target;
-  if (!c.classList?.contains('abcol')) return;
-  clearTimeout(c._t);
-  c._t = setTimeout(() => { if (Date.now() >= abQuiet) abPick(c); }, 140);
-}, true);
-
-function setStart(v) {
-  startAt = v;
-  renderAb();
-  clearTimeout(abTimer);
-  abTimer = setTimeout(render, 350);                          // mehrere Tipper hintereinander laden nur einmal
+function abOpenPanel() { abOpen = true; abDraft = { d: new Date(abSet() ? startAt : in5(0)), now: !abSet() }; renderAb(); }
+function abClose() { abOpen = false; abDraft = null; renderAb(); }                // wegklicken verwirft den Entwurf
+function abApply() {
+  const inp = document.querySelector('.abTimeIn');
+  if (inp && inp.value && !abReadTime(inp, true)) return;                          // ungültige Uhrzeit: offen lassen
+  startAt = abDraft.now ? '' : localIso(abDraft.d);
+  abClose();
+  render();
 }
 
-document.addEventListener('click', e => {
-  if (!e.target.closest('#abbar')) { if (abOpen) { abOpen = false; renderAb(); } return; }
-  if (e.target.closest('#abToggle')) { abOpen = !abOpen; return renderAb(); }
-  if (e.target.closest('.abdone')) { abOpen = false; return renderAb(); }
-  if (e.target.closest('.abNow')) return setStart('');
-  const plus = e.target.closest('.abPlus');
-  if (plus) return setStart(localIso(in5(+plus.dataset.min)));
-  const it = e.target.closest('.abit');
-  if (it) it.parentElement.scrollTo({ top: it.dataset.i * AB_ROW, behavior: 'smooth' });
+// Uhrzeit aus dem Feld lesen: „1430“, „14:30“, „930“ oder „9“ (= 09:00). Gibt false bei Unsinn zurück.
+function abReadTime(inp, final) {
+  const dig = inp.value.replace(/\D/g, '').slice(0, 4);
+  inp.value = dig.length > 2 ? dig.slice(0, 2) + ':' + dig.slice(2) : dig;
+  let h, m;
+  if (dig.length === 4) { h = +dig.slice(0, 2); m = +dig.slice(2); }
+  else if (final && dig.length === 3) { h = +dig[0]; m = +dig.slice(1); }
+  else if (final && dig.length >= 1) { h = +dig; m = 0; }
+  else { inp.classList.remove('bad'); return false; }
+  const ok = h <= 23 && m <= 59;
+  inp.classList.toggle('bad', !ok);
+  if (!ok) return false;
+  abDraft.d.setHours(h, m, 0, 0);
+  abDraft.now = false;
+  if (final) inp.value = `${pad2(h)}:${pad2(m)}`;
+  document.querySelectorAll('.abNowD').forEach(b => b.classList.remove('on'));
+  const dayOn = [...document.querySelectorAll('.abDay')].some(b => b.classList.contains('on'));
+  if (!dayOn) document.querySelector(`.abDay[data-v="${dayKey(abDraft.d)}"]`)?.classList.add('on');
+  return true;
+}
+
+document.addEventListener('input', e => { if (e.target.classList?.contains('abTimeIn') && abDraft) abReadTime(e.target, false); });
+document.addEventListener('keydown', e => {
+  if (!abOpen) return;
+  if (e.key === 'Escape') abClose();
+  else if (e.key === 'Enter' && e.target.classList?.contains('abTimeIn')) { e.preventDefault(); abApply(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && abOpen) { abOpen = false; renderAb(); } });
+document.addEventListener('click', e => {
+  if (!e.target.closest('#abbar')) { if (abOpen) abClose(); return; }
+  if (e.target.closest('#abToggle')) return abOpen ? abClose() : abOpenPanel();
+  if (e.target.closest('.abreset')) { startAt = ''; abClose(); return render(); }
+  if (!abOpen || !abDraft) return;
+  if (e.target.closest('.abdone')) return abApply();
+  if (e.target.closest('.abNowD')) { abDraft = { d: in5(0), now: true }; return renderAb(); }
+  const plus = e.target.closest('.abPlus');
+  if (plus) { abDraft = { d: in5(+plus.dataset.min), now: false }; return renderAb(); }
+  const day = e.target.closest('.abDay');
+  if (day) {
+    const [y, mo, da] = day.dataset.v.split('-').map(Number);
+    abDraft.d.setFullYear(y, mo - 1, da);
+    abDraft.now = false;
+    const inp = document.querySelector('.abTimeIn');
+    const keep = inp && inp.value;
+    renderAb();
+    const n = document.querySelector('.abTimeIn');
+    if (n && keep && !keep.includes(':')) n.value = keep;
+    return;
+  }
+});
 
 function boardHtml(stop, deps, error, tag) {
   const list = (deps || []).filter(d => filter === 'all' || kind(d) === filter);
