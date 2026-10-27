@@ -122,24 +122,33 @@
   .abpanel button.on { background: var(--accent); color: var(--tab-on); font-weight: 700; }
   .abpanel .abquick button { border-radius: 999px; border-color: var(--border, rgba(255,255,255,.3)); }
   /* Tag zum Antippen, Uhrzeit zum Eintippen. Übernommen wird erst mit „Fertig“ */
-  .abpanel .abgroup { margin-top: 14px; }
-  .abpanel .abgroup > span { display: block; margin: 0 0 6px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .65; }
+  .abpanel { padding: 16px; }
+  .abhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 16px; }
+  .abpanel button.abx { margin: 0; width: 32px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 50%; }
+  .abx .ic { width: 15px; height: 15px; }
+  .abpanel .abgroup { margin-top: 16px; }
+  .abpanel .abgroup > span { display: block; margin: 0 0 8px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; opacity: .65; }
   .abpanel .abrowx { display: flex; flex-wrap: wrap; gap: 6px; }
-  .abpanel button { margin: 0; min-height: 38px; padding: 4px 12px; font-size: 14px; border-radius: 10px; background: var(--surface, rgba(255,255,255,.08)); color: inherit; border: 1px solid transparent; }
+  .abpanel button { margin: 0; min-height: 38px; padding: 4px 12px; font-size: 14px; border-radius: 12px; background: var(--surface, rgba(255,255,255,.08)); color: inherit; border: 1px solid transparent; }
   .abpanel button:hover { border-color: var(--accent); }
-  .abpanel button.on { background: var(--accent); color: var(--tab-on); font-weight: 700; }
+  .abpanel button.on { background: var(--accent); color: var(--tab-on); }
   .abpanel .abquick button { border-radius: 999px; border-color: var(--border, rgba(255,255,255,.3)); }
-  .abpanel .abquick button.on { border-color: transparent; }
-  .abdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-  .abpanel .abdays button { min-width: 0; padding: 4px 0; font-size: 13px; line-height: 1.2; }
-  .abpanel .abdays button small { display: block; font-size: 11px; opacity: .7; }
-  .abtime { display: flex; align-items: center; justify-content: center; gap: 10px; }
-  .abtime input { width: 6.2ch; font: inherit; font-size: 34px; font-weight: 700; text-align: center; letter-spacing: .02em; padding: 6px 12px; box-sizing: content-box;
-    border-radius: 14px; border: 1px solid var(--border, rgba(255,255,255,.35)); background: var(--surface, rgba(255,255,255,.08)); color: inherit; outline: none; }
-  .abtime input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring, transparent); }
-  .abtime input.bad { border-color: #ff6b61; }
-  .abtime span { opacity: .7; font-size: 16px; }
-  .abpanel .abdone { width: 100%; margin-top: 14px; background: var(--accent); color: var(--tab-on); font-weight: 600; }
+  .abpanel .abquick button.on { border-color: transparent; font-weight: 700; }
+  /* Tag als kleine Kalenderkachel: Wochentag, Datum, Monat */
+  .abdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .abpanel .abdays button { min-width: 0; min-height: 66px; padding: 6px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 14px; }
+  .abdays small { font-size: 11px; opacity: .7; text-transform: uppercase; letter-spacing: .04em; }
+  .abdays b { font-size: 20px; line-height: 1.1; }
+  .abdays i { font-style: normal; font-size: 10.5px; opacity: .6; }
+  .abpanel .abdays button.on small, .abpanel .abdays button.on i { opacity: .85; }
+  .abtime { display: flex; align-items: center; gap: 10px; padding: 4px 16px; border-radius: 16px; border: 1px solid var(--border, rgba(255,255,255,.35)); background: var(--surface, rgba(255,255,255,.06)); }
+  .abtime:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring, transparent); }
+  .abtime .ic { width: 22px; height: 22px; flex: none; color: var(--accent); }
+  .abtime input { flex: 1; min-width: 0; font: inherit; font-size: 34px; font-weight: 700; letter-spacing: .04em; text-align: center; padding: 6px 0; background: none; border: 0; color: inherit; outline: none; }
+  .abtime input::placeholder { opacity: .25; }
+  .abtime:has(input.bad) { border-color: #ff6b61; }
+  .abtime em { font-style: normal; opacity: .6; font-size: 15px; }
+  .abpanel .abdone { width: 100%; margin-top: 18px; min-height: 46px; font-size: 15px; background: var(--accent); color: var(--tab-on); font-weight: 600; }
   #acct.hidden + .menusec { margin-top: 2px; padding-top: 0; border-top: 0; }
   .search { position: relative; flex: 1 1 260px; max-width: 420px; }
   .search input { width: 100%; font: 16px Arial, sans-serif; padding: 5px 8px; border: 2px solid var(--white); background: var(--white); color: #000; border-radius: 0; }
@@ -869,18 +878,25 @@ function renderAb() {
   let panel = '';
   if (abOpen && abDraft) {
     const c = abDraft.d;
-    const days = abDays().map(d => `<button type="button" class="abDay ${!abDraft.now && dayKey(d) === dayKey(c) ? 'on' : ''}" data-v="${dayKey(d)}">${tagName(d)}<small>${d.getDate()}.${d.getMonth() + 1}.</small></button>`).join('');
+    const days = abDays().map(d => `<button type="button" class="abDay ${!abDraft.now && dayKey(d) === dayKey(c) ? 'on' : ''}" data-v="${dayKey(d)}"><small>${tagName(d)}</small><b>${d.getDate()}</b><i>${d.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '')}</i></button>`).join('');
+    const tv = abDraft.timeSet ? pad2(c.getHours()) + ':' + pad2(c.getMinutes()) : '';
     panel = `<div class="abpanel" role="dialog" aria-label="Abfahrten ab">
+      <div class="abhead"><b>Abfahrten ab</b><button type="button" class="abx" aria-label="Schließen ohne Übernehmen">${ic('x')}</button></div>
       <div class="abrowx abquick"><button type="button" class="abNowD ${abDraft.now ? 'on' : ''}">Jetzt</button><button type="button" class="abPlus" data-min="30">+30 min</button><button type="button" class="abPlus" data-min="60">+1 Std</button><button type="button" class="abPlus" data-min="120">+2 Std</button></div>
       <div class="abgroup"><span>Tag</span><div class="abdays">${days}</div></div>
-      <div class="abgroup"><span>Uhrzeit</span><div class="abtime"><input class="abTimeIn" inputmode="numeric" maxlength="5" autocomplete="off" value="${abDraft.now ? '' : pad2(c.getHours()) + ':' + pad2(c.getMinutes())}" placeholder="${pad2(c.getHours())}:${pad2(c.getMinutes())}" aria-label="Uhrzeit, zum Beispiel 1430"><span>Uhr</span></div></div>
+      <div class="abgroup"><span>Uhrzeit eintragen</span><div class="abtime">${ic('clock')}<input class="abTimeIn" inputmode="numeric" maxlength="5" autocomplete="off" value="${tv}" placeholder="--:--" aria-label="Uhrzeit, zum Beispiel 1430"><em>Uhr</em></div></div>
       <button type="button" class="abdone">Fertig</button></div>`;
   }
   box.innerHTML = `<div class="abwrap"><button type="button" class="abpill ${abSet() ? 'set' : ''}" id="abToggle" aria-expanded="${abOpen}" aria-haspopup="dialog">${ic('clock')}<span class="ablabel"><small>Abfahrten ab</small><b>${abLabel()}</b></span><span class="abchev">▾</span></button>${
     abSet() ? `<button type="button" class="abreset abNow" title="Zurück auf jetzt" aria-label="Zurück auf jetzt">${ic('x')}</button>` : ''}${panel}</div>`;
 }
 
-function abOpenPanel() { abOpen = true; abDraft = { d: new Date(abSet() ? startAt : in5(0)), now: !abSet() }; renderAb(); }
+function abOpenPanel() {
+  abOpen = true;
+  abDraft = { d: new Date(abSet() ? startAt : in5(0)), now: !abSet(), timeSet: abSet() };
+  renderAb();
+  if (matchMedia('(pointer: fine)').matches) document.querySelector('.abTimeIn')?.focus();      // am PC gleich lostippen
+}
 function abClose() { abOpen = false; abDraft = null; renderAb(); }                // wegklicken verwirft den Entwurf
 function abApply() {
   const inp = document.querySelector('.abTimeIn');
@@ -904,6 +920,7 @@ function abReadTime(inp, final) {
   if (!ok) return false;
   abDraft.d.setHours(h, m, 0, 0);
   abDraft.now = false;
+  abDraft.timeSet = true;
   if (final) inp.value = `${pad2(h)}:${pad2(m)}`;
   document.querySelectorAll('.abNowD').forEach(b => b.classList.remove('on'));
   const dayOn = [...document.querySelectorAll('.abDay')].some(b => b.classList.contains('on'));
@@ -923,9 +940,10 @@ document.addEventListener('click', e => {
   if (e.target.closest('.abreset')) { startAt = ''; abClose(); return render(); }
   if (!abOpen || !abDraft) return;
   if (e.target.closest('.abdone')) return abApply();
-  if (e.target.closest('.abNowD')) { abDraft = { d: in5(0), now: true }; return renderAb(); }
+  if (e.target.closest('.abx')) return abClose();
+  if (e.target.closest('.abNowD')) { abDraft = { d: in5(0), now: true, timeSet: false }; return renderAb(); }
   const plus = e.target.closest('.abPlus');
-  if (plus) { abDraft = { d: in5(+plus.dataset.min), now: false }; return renderAb(); }
+  if (plus) { abDraft = { d: in5(+plus.dataset.min), now: false, timeSet: true }; return renderAb(); }
   const day = e.target.closest('.abDay');
   if (day) {
     const [y, mo, da] = day.dataset.v.split('-').map(Number);
@@ -936,6 +954,7 @@ document.addEventListener('click', e => {
     renderAb();
     const n = document.querySelector('.abTimeIn');
     if (n && keep && !keep.includes(':')) n.value = keep;
+    n?.focus();
     return;
   }
 });
