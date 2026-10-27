@@ -2386,6 +2386,8 @@ def avatar_data(cid):
             with urllib.request.urlopen(req, timeout=15) as r:
                 roh = r.read(400000)
             bild = "data:image/jpeg;base64," + base64.b64encode(roh).decode()
+        else:
+            log("Profilbild: keins vorhanden oder fuer Bots versteckt")
     except Exception as e:
         log("Profilbild nicht geladen:", type(e).__name__)          # ohne Text, denn der koennte die Adresse mit Token enthalten
         return None                                                 # Fehler werden nicht zwischengespeichert
