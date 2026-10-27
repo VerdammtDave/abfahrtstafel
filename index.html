@@ -94,7 +94,11 @@
   /* Symbol über dem Text, damit nichts aus dem schmalen Menü herausragt (auch im modernen Stil) */
   .menupanel .themeseg .chip { flex-direction: column; gap: 3px; height: 56px; min-width: 0; padding: 4px 2px; font-size: 12.5px; line-height: 1.1; border-radius: 12px; }
   .menupanel .themeseg .ico { margin: 0; }
-  .tripmeta { margin: 0 0 6px; font-size: 12.5px; opacity: .7; overflow-wrap: anywhere; }
+  .tripsum .tripnr { grid-column: 1 / -1; }
+  .tripsum .tripnr small { opacity: .65; font-size: 12.5px; }
+  .abrow { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 14px; }
+  .abrow input { font: inherit; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--border, rgba(255,255,255,.4)); background: var(--surface, transparent); color: inherit; color-scheme: light dark; }
+  .abrow button { margin: 0; padding: 3px 12px; font-size: 13px; border-radius: 999px; background: none; border: 1px solid var(--border, rgba(255,255,255,.4)); color: inherit; }
   #acct.hidden + .menusec { margin-top: 2px; padding-top: 0; border-top: 0; }
   .search { position: relative; flex: 1 1 260px; max-width: 420px; }
   .search input { width: 100%; font: 16px Arial, sans-serif; padding: 5px 8px; border: 2px solid var(--white); background: var(--white); color: #000; border-radius: 0; }
@@ -482,6 +486,11 @@ const MOBIL = matchMedia('(max-width: 700px)');
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '2.1.0', date: '27.10.2026', items: [
+    'Abfahrten ab einer Uhrzeit: Über jeder Tafel gibt es „Abfahrten ab“ mit Datum und Uhrzeit, „Jetzt“ springt zurück',
+    'Fernbusse wie Flixbus gelten jetzt als Bus (Symbol, Filter, „Steig“ statt „Gleis“) und nicht mehr als Zug',
+    'Zugnummer steht nur noch in den Details der Fahrt und heißt bei Bussen „Fahrtnummer“',
+    'Das Telegram-Profilbild lädt zuverlässiger und bleibt zwischengespeichert' ] },
   { v: '2.0.1', date: '27.10.2026', items: [
     'Die Darstellungs-Knöpfe im Menü (Klassisch, Dunkel, Hell) sitzen sauber nebeneinander und ragen nicht mehr heraus',
     'In der Haltliste steht klein dazu, was die Daten hergeben: Zugnummer, Strecke und Betreiber' ] },
@@ -571,6 +580,7 @@ const store = {
 let favs = store.get('favs', []);      // [{id, name}]
 let current = store.get('current', null);
 let filter = 'all';
+let startAt = '';                      // „Abfahrten ab“: lokale Zeit als YYYY-MM-DDTHH:MM, leer = jetzt
 let view = 'board';
 let favSel = null;                     // in der Favoritenliste gewählte Haltestelle
 let gen = 0;                           // verwirft veraltete Ladevorgänge
@@ -584,7 +594,10 @@ const depByKey = new Map();            // Fahrt-Schlüssel -> Abfahrt der angeze
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const hhmm = iso => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-const kind = d => d.mode === 'BUS' ? 'bus' : 'bahn';
+// Fernbusse (z. B. Flixbus) melden sich bei Transitous als COACH und sind keine Züge
+const BUS_MODES = ['BUS', 'COACH', 'TROLLEYBUS'];
+const isBus = m => BUS_MODES.includes(m);
+const kind = d => isBus(d.mode) ? 'bus' : 'bahn';
 const isFav = id => favs.some(f => f.id === id);
 
 async function api(path) {
@@ -594,7 +607,8 @@ async function api(path) {
 }
 
 async function fetchDepartures(id) {
-  const data = await api(`/stoptimes?stopId=${encodeURIComponent(id)}&n=150`);
+  const ab = startAt && !isNaN(new Date(startAt)) ? '&time=' + encodeURIComponent(new Date(startAt).toISOString()) : '';
+  const data = await api(`/stoptimes?stopId=${encodeURIComponent(id)}&n=150${ab}`);
   return (data.stopTimes || []).map(st => {
     const p = st.place;
     const planned = p.scheduledDeparture || p.departure;
@@ -693,14 +707,16 @@ function tripHtml(d, leg) {
     return `<li class="${cls}"><button type="button" class="stoplink" data-id="${esc(p.stopId || '')}" data-name="${esc(cleanName(p.name))}" ${p.stopId ? '' : 'disabled'}>
       <span class="stime">${zeit}</span><span class="sname">${esc(cleanName(p.name))}${i === here ? `<em${i === naechster ? ' class="nx"' : ''}>hier</em>` : ''}${i === naechster && i !== here ? ' <em class="nx">nächster Halt</em>' : ''}</span><span class="strack">${p.track ? esc(platformLabel(d.mode) + ' ' + p.track) : ''}</span></button></li>`;
   }).join('');
-  const meta = [leg.tripShortName && `Zugnr. ${leg.tripShortName}`, leg.routeLongName, leg.category, leg.agencyName]
-    .filter((v, i, a) => v && a.indexOf(v) === i && v !== d.line?.name).map(esc).join(' · ');
-  return `<h3 class="alhead">${ic(d.mode === 'BUS' ? 'bus' : 'train')} ${esc(d.line?.name || '')} → ${esc(d.direction || cleanName(last.name))} ${stand}${live ? '<span class="live" title="Echtzeitdaten">Live</span>' : ''}</h3>
-    ${meta ? `<p class="tripmeta">${meta}</p>` : ''}
+  const nr = leg.tripShortName && leg.tripShortName !== d.line?.name ? leg.tripShortName : '';
+  const betreiber = [leg.routeLongName, leg.agencyName].filter((v, i, a) => v && a.indexOf(v) === i && v !== d.line?.name).join(' · ');
+  const nrLabel = isBus(d.mode) ? 'Fahrtnummer' : ['TRAM', 'SUBWAY', 'FERRY'].includes(d.mode) ? 'Fahrt' : 'Zugnummer';
+  const detail = nr || betreiber ? `<div class="tripnr"><span>${nr ? nrLabel : 'Betreiber'}</span><b>${esc(nr || betreiber)}</b>${nr && betreiber ? `<small>${esc(betreiber)}</small>` : ''}</div>` : '';
+  return `<h3 class="alhead">${ic(isBus(d.mode) ? 'bus' : 'train')} ${esc(d.line?.name || '')} → ${esc(d.direction || cleanName(last.name))} ${stand}${live ? '<span class="live" title="Echtzeitdaten">Live</span>' : ''}</h3>
     <div class="tripsum">
       <div><span>Von</span><b>${esc(cleanName(first.name))}</b><small>ab ${clock(times[0].real || times[0].plan)}</small></div>
       <div><span>Nach</span><b>${esc(cleanName(last.name))}</b><small>an ${clock(times[times.length - 1].real || times[times.length - 1].plan)}</small></div>
       <div><span>Strecke</span><b>${stops.length} Halte${dur ? ' · ' + dur + ' min' : ''}</b><small>${rest > 0 ? rest + ' Halte nach ' + esc(d.stopName) : 'Endhaltestelle'}</small></div>
+      ${detail}
     </div>
     <p class="hint">Tippe auf eine Haltestelle, um ihre Abfahrten zu sehen.${naechster > 0 ? ' <button type="button" class="linkbtn" id="jumpNext">Zum nächsten Halt</button>' : ''}</p>
     <ol class="stops">${items}</ol>
@@ -728,9 +744,9 @@ async function fetchVia(d) {
   return via;
 }
 
-const MODE_NAMES = { BUS: 'Bus', TRAM: 'Tram', SUBWAY: 'U-Bahn', FERRY: 'Fähre' };
+const MODE_NAMES = { BUS: 'Bus', COACH: 'Fernbus', TROLLEYBUS: 'Bus', TRAM: 'Tram', SUBWAY: 'U-Bahn', FERRY: 'Fähre', SUBURBAN: 'S-Bahn', AIRPLANE: 'Flug' };
 // Bus, Tram und Fähre halten am Steig, Zug und U-Bahn am Gleis
-const platformLabel = m => ['BUS', 'TRAM', 'FERRY'].includes(m) ? 'Steig' : 'Gleis';
+const platformLabel = m => isBus(m) || ['TRAM', 'FERRY'].includes(m) ? 'Steig' : 'Gleis';
 const modeName = m => MODE_NAMES[m] || 'Zug';
 
 // an Folgetagen den Wochentag dazuschreiben
@@ -780,6 +796,7 @@ function boardHtml(stop, deps, error, tag) {
       <button class="star ${isFav(stop.id) ? 'on' : ''}" data-id="${esc(stop.id)}" data-name="${esc(stop.name)}"
         title="Favorit umschalten" aria-label="Favorit umschalten">${ic('star', isFav(stop.id) ? 'fill' : '')}</button>
     </div>
+    <div class="abrow"><label>Abfahrten ab <input type="datetime-local" class="abTime" value="${esc(startAt)}"></label>${startAt ? '<button type="button" class="abNow">Jetzt</button>' : ''}</div>
     <div class="cols"><div>Zeit</div><div>Nach</div><div>Über</div><div class="gh">Gleis/Steig</div></div>
     <div class="rows">${rows}</div>
   </section>`;
@@ -967,6 +984,7 @@ $('#suggest').addEventListener('click', e => {
 });
 
 document.addEventListener('click', e => {
+  if (e.target.closest('.abNow')) { startAt = ''; return render(); }
   const alk = e.target.closest('.alertlink');
   if (alk) return showAlerts(depByKey.get(alk.closest('.row')?.dataset.key));
   const tr = e.target.closest('.board .ueber[role="button"]') || (MOBIL.matches && e.target.closest('.board .nach.tripable'));
@@ -1035,7 +1053,12 @@ setInterval(() => {
   const t = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   document.querySelectorAll('.clock').forEach(c => c.textContent = t);
 }, 1000);
-setInterval(render, 60000);
+setInterval(() => { if (!document.activeElement?.classList?.contains('abTime')) render(); }, 60000);
+document.addEventListener('change', e => {
+  if (!e.target.classList?.contains('abTime')) return;
+  startAt = e.target.value;
+  render();
+});
 
 // ---------- Telegram-Anbindung (nur für verifizierte Nutzer des Bots) ----------
 async function bot(method, path, body) {
@@ -1051,13 +1074,19 @@ async function bot(method, path, body) {
   return r.json();
 }
 
-let avatarImg;      // undefined = noch nicht geladen, null = keins vorhanden, sonst Daten-Adresse des Telegram-Profilbilds
+const AVATAR_OK = /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;
+let avatarImg = session ? store.get('avatar', null) : null;   // Telegram-Profilbild als Daten-Adresse, beim nächsten Besuch sofort da
+if (avatarImg && !AVATAR_OK.test(avatarImg)) avatarImg = null;
+let avatarAsked = false;
 function loadAvatar() {
-  if (!session || avatarImg !== undefined) return;
-  avatarImg = null;
+  if (!session || avatarAsked) return;
+  avatarAsked = true;
   bot('GET', '/avatar').then(r => {
-    if (/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(r.image || '')) { avatarImg = r.image; renderAcct(); }
-  }).catch(() => {});
+    if (AVATAR_OK.test(r.image || '')) avatarImg = r.image;
+    else if (r.image === '') avatarImg = null;                 // die Person hat (für Bots) kein Bild
+    store.set('avatar', avatarImg);
+    renderAcct();
+  }).catch(() => { avatarAsked = false; });                    // Fehler: beim nächsten Zeichnen erneut versuchen
 }
 
 function renderAcct() {
@@ -1367,7 +1396,9 @@ async function login() {
 function logout(silent) {
   if (!silent && session) bot('POST', '/logout').catch(() => {});
   session = null;
-  avatarImg = undefined;
+  avatarImg = null;
+  avatarAsked = false;
+  store.set('avatar', null);
   store.set('session', null);
   tracked = new Set();
   botTrips = null;

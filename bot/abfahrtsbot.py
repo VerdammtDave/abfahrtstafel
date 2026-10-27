@@ -265,7 +265,7 @@ def hhmm(dt):
 
 
 def vehicle(mode):
-    return "bus" if mode == "BUS" else "bahn"
+    return "bus" if mode in ("BUS", "COACH", "TROLLEYBUS") else "bahn"      # Fernbusse (COACH) sind keine Zuege
 
 
 def clean_name(n):
@@ -2388,6 +2388,7 @@ def avatar_data(cid):
             bild = "data:image/jpeg;base64," + base64.b64encode(roh).decode()
     except Exception as e:
         log("Profilbild nicht geladen:", type(e).__name__)          # ohne Text, denn der koennte die Adresse mit Token enthalten
+        return None                                                 # Fehler werden nicht zwischengespeichert
     avatar_cache[cid] = (time.time() + AVATAR_TTL, bild)
     return bild
 
@@ -2407,7 +2408,8 @@ def web_route(method, path, q, body, auth, meta=None):
             save()
         return 200, {}
     if method == "GET" and path == "/avatar":
-        return 200, {"image": avatar_data(cid)}                  # cid aus der Sitzung, nie aus der Anfrage
+        bild = avatar_data(cid)
+        return (200, {"image": bild}) if bild is not None else (502, {"error": "Profilbild nicht erreichbar"})                  # cid aus der Sitzung, nie aus der Anfrage
     if method == "GET" and path == "/me":
         with lock:
             return 200, {"name": who(cid)}
