@@ -66,6 +66,8 @@
   .menubtn { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: grid; place-items: center; font-size: 20px; line-height: 1;
     background: var(--surface, rgba(255,255,255,.1)); color: var(--white); border: 1px solid var(--border, rgba(255,255,255,.3)); }
   .menubtn[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+  .avatar { overflow: hidden; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .menubtn .avatar { width: 100%; height: 100%; border-radius: 50%; display: grid; place-items: center; font-size: 16px; font-weight: 700;
     background: var(--accent); color: var(--tab-on); }
   .menupanel { position: absolute; right: 0; top: calc(100% + 10px); width: 280px; z-index: 40; padding: 8px; border-radius: 16px;
@@ -155,7 +157,7 @@
   .bell { font-style: normal; font-size: 16px; margin-left: 6px; vertical-align: middle; opacity: .35; }
   .bell.on { opacity: 1; color: var(--bell-on, var(--accent)); }
   .bell.on .ic { fill: currentColor; }
-  .row.trackable { cursor: pointer; }
+  .row.trackable .zeit { cursor: pointer; }
   .alertlink { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
   /* Das „i“ wird aus Punkt und Strich gezeichnet, damit es exakt mittig sitzt (Schriftzeichen haben eigene Abstände). */
   .alertlink.info { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; box-sizing: border-box;
@@ -227,7 +229,15 @@
   .board .ueber[role="button"] { cursor: pointer; }
   .board .ueber[role="button"]:hover { background: var(--surface-hi, rgba(255,255,255,.06)); }
   .board .row:hover .ueber[role="button"] { text-decoration: underline dotted; text-underline-offset: 4px; }
-  .tripbtn { display: none; margin: 6px 0 0; padding: 3px 10px; font-size: 12.5px; border-radius: 999px; background: var(--surface, rgba(255,255,255,.1)); color: var(--muted, inherit); border: 1px solid var(--border, rgba(255,255,255,.3)); }
+  html, body { overscroll-behavior-y: contain; }
+  body.modal-open { overflow: hidden; }
+  .modal, .modal .card { overscroll-behavior: contain; }
+  /* Ziehen zum Aktualisieren */
+  .ptr { position: fixed; top: 0; left: 50%; z-index: 40; width: 40px; height: 40px; margin-left: -20px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--card, var(--navy)); color: var(--white); border: 1px solid var(--border, rgba(255,255,255,.3)); box-shadow: 0 4px 14px rgba(0,0,0,.35);
+    transform: translateY(-50px); opacity: 0; pointer-events: none; }
+  .ptr.back { transition: transform .25s ease, opacity .25s ease; }
+  .ptr.spin svg { animation: spin .8s linear infinite; }
   .modal .card .alhead .vz { margin-left: 8px; vertical-align: middle; font-size: 14px; }
   .vz.ok { color: #3fb950; }
   .tripsum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0 4px; }
@@ -262,7 +272,8 @@
   .stoplink em { font-style: normal; font-size: 11.5px; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--tab-on); }
   .stoplink .strack { font-size: 12.5px; opacity: .7; white-space: nowrap; }
   @media (max-width: 700px) {
-    .tripbtn { display: block; width: fit-content; }
+    .nach.tripable { cursor: pointer; }
+    .nach.tripable::after { content: " ›"; opacity: .55; }
     .tripsum { grid-template-columns: 1fr; gap: 6px; }
     .tripsum div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
     .tripsum span { width: 60px; }
@@ -463,9 +474,18 @@
 <div class="foot"><span id="updated"></span></div>
 
 <script>
+const MOBIL = matchMedia('(max-width: 700px)');
 const API = 'https://api.transitous.org/api/v1';   // MOTIS / Transitous, europaweit, CORS offen
 const BOT_API = '/api';                // Bot-API auf demselben Server (Caddy leitet /api weiter). Leer = ohne Telegram-Anbindung
 const UPDATES = [
+  { v: '2.0.0', date: '26.10.2026', items: [
+    'Am Handy oben nach unten ziehen lädt die Abfahrten neu, mit drehendem Kreis',
+    'Ist ein Fenster offen, bleibt die Seite dahinter stehen. Esc am PC und die Zurück-Taste am Handy schließen das Fenster',
+    'Der Knopf „Halte“ am Handy ist weg: Ein Tipp auf das Fahrtziel öffnet jetzt die Haltliste',
+    'Neue Rollen: Admin (die bisherigen Verwalter) und neu Verwalter. Ein Verwalter lädt Leute ein und entzieht Mitgliedern und Gästen den Zugang',
+    'Die Glocke schaltest du nur noch mit einem Klick auf die Zeit um',
+    'Dein Telegram-Profilbild erscheint auch auf der Website',
+    'Der Neustart des Bots ist entfernt' ] },
   { v: '1.9.2', date: '26.10.2026', items: [
     'Haltestellennamen stimmen jetzt überall: Die Tafel zeigt den Namen, den die Abfahrten tragen (z. B. „Praha hlavní nádraží“ statt „Praha, hlavni nadrazi“), Rohnamen mit Doppelkomma werden bereinigt',
     'In der Suche steht der Ort dabei („Hlavní nádraží · Brno“), und gleiche Namen in verschiedenen Orten werden nicht mehr zusammengeworfen' ] },
@@ -732,7 +752,7 @@ function rowHtml(d, idx) {
   const bell = session ? `<i class="bell ${tracked.has(d.key) ? 'on' : ''}" title="Fahrt im Telegram-Bot verfolgen">${ic('bell')}</i>` : '';
   return `<div class="row ${d.cancelled ? 'cancel' : ''} ${session ? 'trackable' : ''}" data-idx="${idx}" data-key="${esc(d.key)}">
     <div class="zeit"><b>${zeitHtml(planned, d.when, delayMin, d.cancelled)}${altHtml(planned, delayMin, d.cancelled)}${info}${bell}</b><small>${vz}${esc(modeName(d.mode))} | ${esc(d.line?.name || '')}${dayTag(planned)}</small></div>
-    <div class="nach">${esc(d.direction || '')}${d.tripId ? '<button type="button" class="tripbtn">Halte ›</button>' : ''}</div>
+    <div class="nach${d.tripId ? ' tripable' : ''}">${esc(d.direction || '')}</div>
     <div class="ueber" ${d.tripId ? 'title="Alle Halte anzeigen" role="button" tabindex="0"' : ''}><span class="mq"><span class="seg">${ueber}<i class="end">+++</i></span></span></div>
     <div class="gleis">${d.platform ? `<small>${platformLabel(d.mode)}</small>${esc(d.platform)}` : ''}</div>
   </div>`;
@@ -939,13 +959,13 @@ $('#suggest').addEventListener('click', e => {
 document.addEventListener('click', e => {
   const alk = e.target.closest('.alertlink');
   if (alk) return showAlerts(depByKey.get(alk.closest('.row')?.dataset.key));
-  const tr = e.target.closest('.board .ueber[role="button"], .tripbtn');
+  const tr = e.target.closest('.board .ueber[role="button"]') || (MOBIL.matches && e.target.closest('.board .nach.tripable'));
   if (tr) return openTrip(depByKey.get(tr.closest('.row')?.dataset.key));
   if (e.target.closest('.board .ueber')) return;                    // ein Klick auf „Über“ schaltet nie das Verfolgen um
   const un = e.target.closest('.untrack');
   if (un) return untrack(un.dataset.key);
   const row = e.target.closest('.row.trackable');
-  if (row) return toggleTrack(row);
+  if (row && e.target.closest('.zeit')) return toggleTrack(row);   // nur ein Klick auf die Zeit schaltet die Glocke
   const item = e.target.closest('.favitem:not(.plain)');
   if (item) { favSel = favs.find(f => f.id === item.dataset.id) || null; return render(); }
   if (e.target.closest('.back')) { favSel = null; return render(); }
@@ -961,6 +981,44 @@ document.querySelectorAll('.chip[data-f]').forEach(c => c.addEventListener('clic
   render();
 }));
 $('#refresh').addEventListener('click', render);
+
+// Am Handy oben nach unten ziehen lädt neu: ein Kreis folgt dem Finger und dreht sich beim Laden
+(() => {
+  const SCHWELLE = 70;
+  const kreis = document.createElement('div');
+  kreis.className = 'ptr';
+  kreis.innerHTML = $('#refresh').innerHTML;
+  document.body.appendChild(kreis);
+  let y0 = null, zug = 0;
+  const zeige = (dy, drehen) => {
+    kreis.style.transform = `translateY(${Math.min(dy, 110) - 50 + 12}px) rotate(${dy * 3}deg)`;
+    kreis.style.opacity = String(Math.min(dy / SCHWELLE, 1));
+    kreis.classList.toggle('spin', !!drehen);
+  };
+  const zurueck = () => { kreis.classList.add('back'); kreis.classList.remove('spin'); kreis.style.transform = ''; kreis.style.opacity = ''; };
+  const gesperrt = () => document.body.classList.contains('modal-open') || !$('#menuPanel').classList.contains('hidden');
+  addEventListener('touchstart', e => {
+    y0 = window.scrollY <= 0 && !gesperrt() && e.touches.length === 1 ? e.touches[0].clientY : null;
+    zug = 0;
+    kreis.classList.remove('back');
+  }, { passive: true });
+  addEventListener('touchmove', e => {
+    if (y0 === null) return;
+    zug = Math.max(0, (e.touches[0].clientY - y0) * .5);
+    if (window.scrollY > 0) { y0 = null; return zurueck(); }
+    if (zug > 0) zeige(zug, false);
+  }, { passive: true });
+  addEventListener('touchend', async () => {
+    if (y0 === null) return;
+    y0 = null;
+    if (zug < SCHWELLE) return zurueck();
+    kreis.classList.add('back');
+    kreis.style.transform = 'translateY(12px)';
+    kreis.style.opacity = '1';
+    kreis.classList.add('spin');
+    try { await render(); } finally { setTimeout(zurueck, 300); }
+  });
+})();
 
 // Uhr in jeder Tafel live halten, Daten jede Minute neu laden
 setInterval(() => {
@@ -983,10 +1041,20 @@ async function bot(method, path, body) {
   return r.json();
 }
 
+let avatarImg;      // undefined = noch nicht geladen, null = keins vorhanden, sonst Daten-Adresse des Telegram-Profilbilds
+function loadAvatar() {
+  if (!session || avatarImg !== undefined) return;
+  avatarImg = null;
+  bot('GET', '/avatar').then(r => {
+    if (/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(r.image || '')) { avatarImg = r.image; renderAcct(); }
+  }).catch(() => {});
+}
+
 function renderAcct() {
+  loadAvatar();
   $('#acct').classList.toggle('hidden', !BOT_API);
   $('#trackTab').classList.toggle('hidden', !BOT_API || !session);
-  const initial = esc((session?.name || '?').trim().charAt(0).toUpperCase());
+  const initial = avatarImg ? `<img src="${avatarImg}" alt="">` : esc((session?.name || '?').trim().charAt(0).toUpperCase());
   $('#menuBtn').innerHTML = session ? `<span class="avatar">${initial}</span>` : ic('menu');
   const item = (id, icon, text, extra = '', cls = '') =>
     `<button class="menuitem ${cls}" id="${id}"><span class="mi">${ic(icon)}</span><span class="mt">${text}</span>${extra}</button>`;
@@ -1032,7 +1100,7 @@ function showUpdates() {
 // ---------- Einstellungen und Mitgliederverwaltung ----------
 // Alles liegt im Bot (dieselben Werte wie in Telegram). Hier wird nur angezeigt, vorab geprüft und gesendet.
 let setCur = null;        // zuletzt gespeicherte Einstellungen
-let setAdmin = null;      // Mitglieder, Einladungen und Verlauf (nur für Besitzer und Verwalter)
+let setAdmin = null;      // Mitglieder, Einladungen und Verlauf (nur für Besitzer, Admins und Verwalter)
 let setDirty = false;
 const byId = id => document.getElementById(id);
 const when = ts => new Date(ts * 1000).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
@@ -1153,7 +1221,7 @@ document.addEventListener('click', e => {
   }
 });
 
-const ROLLEN = { verwalter: 'Verwalter', mitglied: 'Mitglied', gast: 'Gast' };
+const ROLLEN = { admin: 'Admin', verwalter: 'Verwalter', mitglied: 'Mitglied', gast: 'Gast' };
 const memSay = (t, k) => { const m = byId('memMsg'); if (m) { m.textContent = t; m.className = 'setmsg ' + (k || ''); } };
 
 function renderMembers() {
@@ -1180,8 +1248,8 @@ function renderMembers() {
   box.innerHTML = `<h5>Personen</h5><div class="memlist">${rows}</div>
     <h5>Einladungen</h5><button type="button" class="primary" data-act="invite">Neue Einladung erstellen</button>${inv}
     <p class="hint">Eine Einladung gilt 24 Stunden, nur einmal, und gibt nur Mitglieder-Zugang. Die Person schickt dem Bot die Zeile „/code …“.
-    Rollen: Besitzer (genau einer), Verwalter (lädt ein und verwaltet Mitglieder und Gäste), Mitglied (nutzt den Bot), Gast (sieht nur per Code geteilte Verbindungen).
-    Jede Rolle ändert nur Rollen unter sich, Verwalter ernennt nur der Besitzer.</p>
+    Rollen: Besitzer (genau einer), Admin (verwaltet Rollen unter sich), Verwalter (lädt ein und entzieht Mitgliedern und Gästen den Zugang), Mitglied (nutzt den Bot), Gast (sieht nur per Code geteilte Verbindungen).
+    Jede Rolle ändert nur Rollen unter sich, Admins ernennt nur der Besitzer.</p>
     ${hist ? '<h5>Verlauf</h5><ul class="hist">' + hist + '</ul>' : ''}<div id="memMsg" class="setmsg" role="status" aria-live="polite"></div>`;
 }
 
@@ -1234,14 +1302,28 @@ function showModal(html, wide) {
   $('#modalBody').innerHTML = '<div class="mclosebar"><button type="button" class="mclose" aria-label="Schließen" title="Schließen">' + ic('x') + '</button></div>' + html;
   $('#modalBody').classList.toggle('wide', wide === true);
   $('#modalBody').classList.toggle('trip', wide === 'trip');
+  if ($('#modal').classList.contains('hidden') && !modalPushed) {
+    history.pushState({ modal: 1 }, '');                       // die Zurück-Taste schließt das Fenster
+    modalPushed = true;
+  }
   $('#modal').classList.remove('hidden');
+  document.body.classList.add('modal-open');
 }
+let modalPushed = false;
 function closeModal(force) {
   if (!force && settingsGuard()) return;
   setDirty = false;
   $('#modal').classList.add('hidden');
+  document.body.classList.remove('modal-open');
   loginPoll = null;
+  if (modalPushed) { modalPushed = false; history.back(); }
 }
+window.addEventListener('popstate', () => {
+  if ($('#modal').classList.contains('hidden')) return;
+  modalPushed = false;
+  if (settingsGuard()) { history.pushState({ modal: 1 }, ''); modalPushed = true; return; }
+  closeModal(true);
+});
 
 let loginPoll = null;
 async function login() {
@@ -1275,6 +1357,7 @@ async function login() {
 function logout(silent) {
   if (!silent && session) bot('POST', '/logout').catch(() => {});
   session = null;
+  avatarImg = undefined;
   store.set('session', null);
   tracked = new Set();
   botTrips = null;

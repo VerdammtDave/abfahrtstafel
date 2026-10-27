@@ -11,18 +11,19 @@
 
 ## Rollen im Bot
 
-- **Besitzer:** gehört der Bot. Genau eine Person, nur über `BOT_OWNER_ID` (oder `owner_id` in `config.json`), sonst die erste Person mit `/start`. Darf alles, auch `/restart`, und ernennt und entlässt Verwalter.
-- **Verwalter:** vom Besitzer ernannt (`data["verwalter"]`). Lädt ein und verwaltet Rollen und Zugänge von Mitgliedern und Gästen, aber nie den Besitzer oder andere Verwalter, und ernennt keine Verwalter. Kein `/restart`.
+- **Besitzer:** gehört der Bot. Genau eine Person, nur über `BOT_OWNER_ID` (oder `owner_id` in `config.json`), sonst die erste Person mit `/start`. Darf alles und ernennt und entlässt Admins.
+- **Admin:** vom Besitzer ernannt (`data["admins"]`). Lädt ein und verwaltet Rollen und Zugänge von Verwalter, Mitgliedern und Gästen, aber nie den Besitzer oder andere Admins, und ernennt keine Admins.
+- **Verwalter:** vom Besitzer oder Admin ernannt (`data["inviters"]`). Lädt Leute ein und entzieht Mitgliedern und Gästen den Zugang, ändert aber keine Rollen und fasst nur Personen unter sich an.
 - **Mitglied:** eingeladen per `/code`. Nutzt den Bot, sonst nichts.
 - **Gast:** hat den Code einer geteilten Verbindung eingelöst. Darf diese Verbindungen ansehen und verfolgen, sonst nichts, und hat keinen Zugang zur Website-Anmeldung.
 
-Jede Rolle ändert nur Rollen unter sich (Rang: Besitzer 4, Verwalter 3, Mitglied 2, Gast 1).
+Jede Rolle ändert nur Rollen unter sich (Rang: Besitzer 5, Admin 4, Verwalter 3, Mitglied 2, Gast 1).
 
 ## Dauerhafte Regeln zu Rollen und Server (gilt für ALLE künftigen Änderungen)
 
 1. Es gibt genau einen Besitzer. Er wird nur über `BOT_OWNER_ID` (oder `owner_id`) bestimmt, sonst ist es die erste Person mit `/start`. Kein Befehl, Knopf oder API-Aufruf macht jemanden zum Besitzer, ersetzt oder entfernt ihn.
-2. Verwalter ernennt und entlässt nur der Besitzer. Ein Verwalter kann den Besitzer und andere Verwalter nicht entfernen, nicht ändern und deren Einladungen nicht widerrufen. Jede Rolle ändert nur Rollen unter sich (zentral `rang`, `can_touch`, `allowed_roles`).
-3. Betrieb (Server, `config.json`, Umgebung, Token, Ports, Dateien, Dienste, Neustart, Logs) gehört dem Besitzer. Die einzige Betriebsfunktion im Bot ist `/restart` (`BETRIEB_COMMANDS`, mit Rückfrage), und die darf nur der Besitzer. Verwalter, Mitglieder und Gäste nie.
+2. Admins ernennt und entlässt nur der Besitzer. Ein Admin kann den Besitzer und andere Admins nicht entfernen, nicht ändern und deren Einladungen nicht widerrufen. Jede Rolle ändert nur Rollen unter sich (zentral `rang`, `can_touch`, `allowed_roles`).
+3. Betrieb (Server, `config.json`, Umgebung, Token, Ports, Dateien, Dienste, Neustart, Logs) gehört dem Besitzer. Der Bot hat keine Betriebsfunktion (es gibt kein `/restart` mehr). Käme je eine neue, gehört sie in `BETRIEB_COMMANDS` oder `BETRIEB_ACTIONS` und darf nur der Besitzer.
 4. Mitglieder nutzen den Bot, sonst nichts. Gäste können nur per `/code` erhaltene Verbindungen ansehen und verfolgen.
 5. Der Bot gibt Bot-Token, Besitzer-ID und Dateipfade nie in Nachrichten, Fehlermeldungen oder API-Antworten aus.
 6. Der Betreiber behält per Server immer die Kontrolle (`data.json` und `config.json` bearbeiten, Dienst neu starten). Der Bot nimmt ihm nie Daten oder Rechte weg.

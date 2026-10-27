@@ -36,7 +36,6 @@ dem Code, die nächste Nachricht ist die Antwort (wartet 5 Minuten). Ein Befehl 
 | `/menue` | Tasten-Menü wieder anzeigen. Die Taste "Ausblenden" blendet es aus, mit dem Tastatur-Symbol im Eingabefeld klappt man es ein und aus |
 | `/clear` | Chatverlauf löschen (Telegram erlaubt nur Nachrichten der letzten 48 Stunden). Favoriten und Tracking bleiben |
 | `/autoclear` | Nachrichten automatisch löschen, an oder aus (`/autoclear an`, `/autoclear aus`, oder über die Taste). Gilt ab dem Einschalten, die Zeit stellt man in `/einstellungen` ein (Standard 47 Stunden) |
-| `/restart` | Bot neu starten (nur der Besitzer, sonst niemand sieht ihn). Fragt vorher nach. Der Bot beendet sich, Docker (`restart: unless-stopped`) oder systemd (`Restart=always`) starten ihn wieder |
 | `/einstellungen` | Menü mit Tasten: Anzeigename, automatisches Löschen (3 bis 47 Stunden) und die zwei Erinnerungen vor einer Fahrt. Gilt für alle, die den Bot nutzen dürfen, auch Gäste |
 | `/status` | Einstellungen und Zeit der letzten Prüfung |
 
@@ -75,10 +74,10 @@ und darf alles außer `/mitglieder` (eigene Favoriten, Tracking, wiederkehrende 
 Der Einladungscode gilt 24 Stunden und nur für eine Person; der Besitzer bekommt eine Meldung, wenn er eingelöst wird.
 `/mitglieder` zeigt alle Eingeladenen und entfernt Zugänge (inklusive deren Favoriten, Tracking und Einstellungen). Dort gibt es auch die Knöpfe
 „Neue Einladung“, „Offene Einladungen“ (mit Widerrufen und den zuletzt erledigten) und pro Person „Details“. Dasselbe gibt es auf der Website unter
-Einstellungen, Mitgliederverwaltung (Besitzer und Verwalter).
+Einstellungen, Mitgliederverwaltung (Besitzer, Admins und Verwalter).
 Eine Einladung gibt nur den Mitglieder-Zugang, nie Verwaltungsrechte. Sie ist 24 Stunden gültig, einmal einlösbar und lässt sich widerrufen.
 Widerrufene, abgelaufene und eingelöste Codes funktionieren nicht mehr. Der Verlauf (ohne Codes) steht in `data.json` unter `invite_hist`.
-Verwalter widerrufen nur eigene Einladungen und die von Personen unter sich.
+Admins und Verwalter widerrufen nur eigene Einladungen und die von Personen unter sich.
 
 ## Website (Abfahrtstafel unter eigener Adresse)
 
@@ -127,29 +126,29 @@ Weitere Einstellungen in `config.json` bzw. Umgebungsvariablen: `owner_id`/`BOT_
 | Rolle | Wer | Wie wird man es |
 |---|---|---|
 | **Besitzer** | gehört der Bot, genau eine Person | `BOT_OWNER_ID` bzw. `owner_id` (sonst der Erste mit `/start`) |
-| **Verwalter** | vom Besitzer ernannt, verwaltet Mitglieder und Gäste | der Besitzer wählt die Rolle in `/mitglieder` oder auf der Website |
+| **Admin** | vom Besitzer ernannt, verwaltet Rollen unter sich | der Besitzer wählt die Rolle in `/mitglieder` oder auf der Website |
+| **Verwalter** | lädt ein und entzieht Mitgliedern und Gästen den Zugang | Besitzer oder Admin wählt die Rolle |
 | **Mitglied** | eingeladene Person | Einladungscode (`/code`) |
 | **Gast** | sieht nur per Code geteilte Verbindungen | Code einer geteilten Verbindung |
 
 Jede Rolle ändert nur Rollen unter sich. Es gibt keine zweite Besitzer-Rolle, und die Rolle Besitzer lässt sich nicht vergeben.
 
-| Aktion | Besitzer | Verwalter | Mitglied | Gast |
-|---|---|---|---|---|
-| Suchen, Favoriten, Tracking, wiederkehrende Fahrten, Einstellungen | ja | ja | ja | nein |
-| Geteilte Verbindung per `/code` ansehen und verfolgen | ja | ja | ja | ja |
-| Einladungscodes erzeugen | ja | ja (höchstens 5 offene Codes) | nein | nein |
-| Einladungen widerrufen | alle | eigene und die von Personen unter sich | nein | nein |
-| `/mitglieder`, Mitglieder und Gäste rauswerfen | alle | Mitglieder und Gäste | nein | nein |
-| Rollen ändern (Dropdown, `/mitglieder`) | alle | Mitglied und Gast | nein | nein |
-| Verwalter ernennen oder entlassen | ja | nein | nein | nein |
-| Bot neu starten (`/restart`) | ja | nein | nein | nein |
-| Website-Anmeldung | ja | ja | ja | nein |
-| Server, Konfiguration, Token, Dienste, Logs | nur am Server selbst | nein | nein | nein |
+| Aktion | Besitzer | Admin | Verwalter | Mitglied | Gast |
+|---|---|---|---|---|---|
+| Suchen, Favoriten, Tracking, wiederkehrende Fahrten, Einstellungen | ja | ja | ja | ja | nein |
+| Geteilte Verbindung per `/code` ansehen und verfolgen | ja | ja | ja | ja | ja |
+| Einladungscodes erzeugen | ja | ja (höchstens 5 offene Codes) | ja (höchstens 5 offene Codes) | nein | nein |
+| Einladungen widerrufen | alle | eigene und die von Personen unter sich | eigene und die von Personen unter sich | nein | nein |
+| `/mitglieder`, Mitglieder und Gäste rauswerfen | alle | alle unter sich | Mitglieder und Gäste | nein | nein |
+| Rollen ändern (Dropdown, `/mitglieder`) | alle | Verwalter, Mitglied und Gast | nein | nein | nein |
+| Admins ernennen oder entlassen | ja | nein | nein | nein | nein |
+| Website-Anmeldung | ja | ja | ja | ja | nein |
+| Server, Konfiguration, Token, Dienste, Logs | nur am Server selbst | nein | nein | nein | nein |
 
-Eine Person, die ein Verwalter einlädt, wird Mitglied. Es wird festgehalten, wer wen eingeladen hat (`invited_by`, sichtbar in `/mitglieder`, bei den Details und auf der Website).
-Entzieht man einem Verwalter die Rolle oder wirft ihn raus, werden seine offenen Codes ungültig. Der Besitzer bekommt eine Meldung, wenn jemand über einen Verwalter dazukommt.
+Eine Person, die ein Admin oder Verwalter einlädt, wird Mitglied. Es wird festgehalten, wer wen eingeladen hat (`invited_by`, sichtbar in `/mitglieder`, bei den Details und auf der Website).
+Entzieht man einem Admin oder Verwalter die Rolle oder wirft ihn raus, werden seine offenen Codes ungültig. Der Besitzer bekommt eine Meldung, wenn jemand über einen Admin oder Verwalter dazukommt.
 
-**Umstellung auf diese Rollen:** Die frühere Rolle Admin heißt jetzt Verwalter (`migrate()` übernimmt sie). Den früheren Server-Verwalter über `VERWALTER_ID` gibt es nicht mehr, die Einstellung wird ignoriert (der Bot schreibt beim Start einen Hinweis ins Log).
+**Umstellung auf diese Rollen:** Die frühere Rolle Verwalter heißt jetzt Admin (`migrate()` übernimmt sie aus `data["verwalter"]` nach `data["admins"]`). Den früheren Server-Verwalter über `VERWALTER_ID` gibt es nicht mehr, die Einstellung wird ignoriert (der Bot schreibt beim Start einen Hinweis ins Log).
 Wer nur darüber Zugang hatte, hat keinen mehr und muss neu eingeladen werden. Das frühere „Einladen erlauben“ für Mitglieder ist ebenfalls entfallen.
 
 ### Eigene Telegram-Nummer herausfinden
@@ -159,8 +158,8 @@ Schreibe in Telegram dem Bot `@userinfobot`. Er antwortet mit deiner ID, einer Z
 ### Regeln für spätere Änderungen
 
 1. Es gibt genau einen Besitzer. Er wird nur über `BOT_OWNER_ID` (oder `owner_id`) bestimmt, sonst ist es die erste Person mit `/start`. Kein Befehl, Knopf oder API-Aufruf macht jemanden zum Besitzer, ersetzt oder entfernt ihn.
-2. Verwalter ernennt und entlässt nur der Besitzer. Ein Verwalter kann den Besitzer und andere Verwalter nicht entfernen, nicht ändern und deren Einladungen nicht widerrufen. Jede Rolle ändert nur Rollen unter sich (zentral `rang`, `can_touch`, `allowed_roles`).
-3. Betrieb (Server, `config.json`, Umgebung, Token, Ports, Dateien, Dienste, Neustart, Logs) gehört dem Besitzer. Die einzige Betriebsfunktion im Bot ist `/restart` (`BETRIEB_COMMANDS`, mit Rückfrage), und die darf nur der Besitzer. Verwalter, Mitglieder und Gäste nie.
+2. Admins ernennt und entlässt nur der Besitzer. Ein Admin kann den Besitzer und andere Admins nicht entfernen, nicht ändern und deren Einladungen nicht widerrufen. Jede Rolle ändert nur Rollen unter sich (zentral `rang`, `can_touch`, `allowed_roles`).
+3. Betrieb (Server, `config.json`, Umgebung, Token, Ports, Dateien, Dienste, Neustart, Logs) gehört dem Besitzer. Der Bot hat keine Betriebsfunktion (es gibt kein `/restart` mehr). Käme je eine neue, gehört sie in `BETRIEB_COMMANDS` oder `BETRIEB_ACTIONS` und darf nur der Besitzer.
 4. Mitglieder nutzen den Bot, sonst nichts. Gäste können nur per `/code` erhaltene Verbindungen ansehen und verfolgen.
 5. Der Bot gibt Bot-Token, Besitzer-ID und Dateipfade nie in Nachrichten, Fehlermeldungen oder API-Antworten aus.
 6. Der Betreiber behält per Server immer die Kontrolle (`data.json` und `config.json` bearbeiten, Dienst neu starten). Der Bot nimmt ihm nie Daten oder Rechte weg.
@@ -205,11 +204,11 @@ Alle Aufrufe mit `Authorization: Bearer <Sitzung>` (kein Cookie, daher kein CSRF
 |---|---|---|
 | `GET /settings` | angemeldet | eigene Einstellungen |
 | `POST /settings` | angemeldet | `nick`, `autoclear_on`, `autoclear_hours`, `remind_first`, `remind_second` (nur die gesendeten Felder, `null` = aus oder entfernen) |
-| `GET /members` | Besitzer, Verwalter | Mitglieder (mit nicht umkehrbarer `ref` statt Chat-ID), offene Einladungen, Verlauf |
-| `POST /members/invite` | Besitzer, Verwalter | neue Einladung |
-| `DELETE /members/invite?code=` | Besitzer, Verwalter | Einladung widerrufen |
-| `POST /members/role` | Besitzer, Verwalter | `{"ref", "role": "verwalter", "mitglied" oder "gast"}`, nur für Personen unter sich, Verwalter ernennt nur der Besitzer |
-| `DELETE /members?ref=` | Besitzer, Verwalter | Person rauswerfen, nur unter sich. Der Besitzer geht nie |
+| `GET /members` | Besitzer, Admin, Verwalter | Mitglieder (mit nicht umkehrbarer `ref` statt Chat-ID), offene Einladungen, Verlauf |
+| `POST /members/invite` | Besitzer, Admin, Verwalter | neue Einladung |
+| `DELETE /members/invite?code=` | Besitzer, Admin, Verwalter | Einladung widerrufen |
+| `POST /members/role` | Besitzer, Admin, Verwalter | `{"ref", "role": "admin", "verwalter", "mitglied" oder "gast"}`, nur für Personen unter sich, nur Besitzer und Admin, Admins ernennt nur der Besitzer |
+| `DELETE /members?ref=` | Besitzer, Admin, Verwalter | Person rauswerfen, nur unter sich. Der Besitzer geht nie |
 
 Mitglieder deaktivieren (ohne zu entfernen) gibt es nicht, es bleibt beim Entfernen.
 

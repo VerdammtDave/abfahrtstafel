@@ -5,6 +5,7 @@ Daten: Transitous (MOTIS), gleiche Quelle wie die Abfahrtstafel. Nur Standardbib
 Start:   python3 abfahrtsbot.py
 Test:    python3 abfahrtsbot.py --selftest "Berlin Hauptbahnhof"
 """
+import base64
 import copy
 import hashlib
 import html
@@ -35,7 +36,7 @@ MODES = ["all", "bus", "bahn", "off"]
 MODE_ICON = {"all": "\U0001f68c\U0001f686", "bus": "\U0001f68c", "bahn": "\U0001f686", "off": "\U0001f515"}
 
 cfg = {}
-data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "verwalter": [], "invited_by": {}, "msglog": {}, "invites": {}, "names": {}, "sessions": {}}
+data = {"owner": None, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [], "shares": {}, "members": [], "admins": [], "inviters": [], "invited_by": {}, "msglog": {}, "invites": {}, "names": {}, "sessions": {}}
 lock = threading.Lock()
 last_check = None
 
@@ -579,13 +580,14 @@ def migrate():
     """Beim Start ausfuehren, wiederholbar. Alte Daten bleiben unveraendert: Fehlt eine persoenliche Einstellung, gilt der
     bisherige Standard (47 Stunden, Erinnerungen 15 und 5 Minuten, kein Name). Ungueltige gespeicherte Werte werden entfernt."""
     data.setdefault("invite_hist", [])
-    data.pop("inviters", None)                   # frueheres Einladerecht: gibt es nicht mehr
-    data.setdefault("verwalter", [])
+    data.setdefault("admins", [])
+    data.setdefault("inviters", [])
     data.setdefault("invited_by", {})
-    for alt in data.pop("admins", []):           # die bisherige Rolle Admin heisst jetzt Verwalter
-        if alt not in data["verwalter"]:
-            data["verwalter"].append(alt)
-    data["verwalter"] = [m for m in data["verwalter"] if m in data["members"] and m != data["owner"]]
+    for alt in data.pop("verwalter", []):        # die fruehere Rolle Verwalter heisst jetzt Admin
+        if alt not in data["admins"]:
+            data["admins"].append(alt)
+    data["admins"] = [m for m in data["admins"] if m in data["members"] and m != data["owner"]]
+    data["inviters"] = [m for m in data["inviters"] if m in data["members"] and m != data["owner"] and m not in data["admins"]]
     for chat in data["chats"].values():
         if chat.get("autoclear_h") is not None and chat["autoclear_h"] != clear_hours_value(chat):
             del chat["autoclear_h"]
@@ -628,7 +630,6 @@ HELP = (
     "/autoclear \u2013 Nachrichten automatisch l\u00f6schen, an oder aus\n"
     "/einstellungen \u2013 Name, automatisches L\u00f6schen und Erinnerungszeiten einstellen\n"
     "/menue \u2013 Tasten-Men\u00fc anzeigen (Taste Ausblenden blendet es aus)\n"
-    "/restart \u2013 Bot neu starten (nur Besitzer)\n"
     "/status \u2013 Einstellungen anzeigen\n\n"
     "Tracking: In einer Abfahrtsliste eine Fahrt antippen. Du bekommst sofort den Stand, danach jede \u00c4nderung "
     "um 2 min sowie eine Erinnerung 15 und 5 min vor Abfahrt."
@@ -859,25 +860,25 @@ GUEST_HELP = (
 )
 
 
-ADMIN_ACTIONS = {"mrm", "mr", "md", "mo", "mx", "mn", "mm"}  # Mitgliederverwaltung: nur Besitzer und Verwalter
-MAX_OPEN_INVITES = 5                                      # offene Einladungscodes pro Verwalter
-OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung: Besitzer und Verwalter
-BETRIEB_COMMANDS = {"/restart"}                           # Betrieb: nur der Besitzer, sonst niemand
-BETRIEB_ACTIONS = {"rst"}                                 # Knoepfe dazu (Bestaetigung)
-RESTART_ASK_TTL = 120                                     # so lange gilt die Rueckfrage "Bot neu starten?"
-restart_pending = {}                                      # Chat -> Zeitpunkt der Rueckfrage, nur im Speicher
+ADMIN_ACTIONS = {"mrm", "mr", "md", "mo", "mx", "mn", "mm"}  # Mitgliederverwaltung: Besitzer, Admin und Verwalter
+ROLE_ACTIONS = {"mr"}                                     # Rollen aendern: nur Besitzer und Admin, nicht der Verwalter
+MAX_OPEN_INVITES = 5                                      # offene Einladungscodes pro Admin und Verwalter
+OWNER_COMMANDS = {"/mitglieder"}                          # Verwaltung: Besitzer, Admin und Verwalter
+BETRIEB_COMMANDS = set()                                  # Betrieb: nur der Besitzer. Derzeit gibt es keine Betriebsfunktion im Bot
+BETRIEB_ACTIONS = set()
 poll_offset = 0                                           # letzter bestaetigter Telegram-Update-Stand
 INVITE_TTL = 24 * 3600                                    # Einladungscode gilt 24 h
 
 
 # REGELN FUER SPAETERE AENDERUNGEN (siehe auch CLAUDE.md und bot/README.md)
-# Rollen von oben nach unten: Besitzer (genau einer), Verwalter, Mitglied, Gast. Jede Rolle darf nur Rollen UNTER sich aendern.
+# Rollen von oben nach unten: Besitzer (genau einer), Admin, Verwalter, Mitglied, Gast. Jede Rolle darf nur Rollen UNTER sich aendern.
 # 1. Der Besitzer wird nur ueber BOT_OWNER_ID (Umgebung) oder "owner_id" (config.json) bestimmt, sonst ist es die erste Person mit
 #    /start. Kein Befehl, Knopf oder API-Aufruf macht jemanden zum Besitzer, ersetzt ihn oder entfernt ihn.
-# 2. Verwalter ernennt und entlaesst nur der Besitzer. Ein Verwalter kann den Besitzer und andere Verwalter nicht entfernen,
-#    nicht aendern und ihre Einladungen nicht widerrufen. Er darf einladen und Mitglieder und Gaeste verwalten.
-# 3. Betrieb (Server, config.json, Umgebung, Token, Ports, Dateien, Dienste, Neustart, Logs) gehoert dem Besitzer. Die einzige
-#    Betriebsfunktion im Bot ist /restart (BETRIEB_COMMANDS), und die darf nur der Besitzer. Verwalter, Mitglieder und Gaeste nie.
+# 2. Admins ernennt und entlaesst nur der Besitzer. Ein Admin kann den Besitzer und andere Admins nicht entfernen,
+#    nicht aendern und ihre Einladungen nicht widerrufen. Er darf einladen und Verwalter, Mitglieder und Gaeste verwalten.
+#    Ein Verwalter darf einladen und Mitgliedern und Gaesten den Zugang entziehen, aber keine Rollen aendern.
+# 3. Betrieb (Server, config.json, Umgebung, Token, Ports, Dateien, Dienste, Neustart, Logs) gehoert dem Besitzer. Der Bot hat
+#    keine Betriebsfunktion. Kommt eine neue, gehoert sie in BETRIEB_COMMANDS oder BETRIEB_ACTIONS und darf nur der Besitzer.
 # 4. Mitglieder koennen den Bot nutzen, sonst nichts. Gaeste koennen nur per /code erhaltene Verbindungen ansehen und verfolgen.
 # 5. Token, Besitzer-ID und Dateipfade erscheinen nie in Nachrichten, Fehlermeldungen oder API-Antworten.
 # 6. Der Betreiber behaelt per Server immer die Kontrolle (data.json und config.json bearbeiten, Dienst neu starten).
@@ -887,26 +888,31 @@ def is_owner(cid):
 
 
 def ist_besitzer(cid):
-    """Der eine Besitzer. Fuer Schutz, Anzeige und Betrieb (/restart). Sonst Rechte ueber is_manager, rang oder may_use pruefen."""
+    """Der eine Besitzer. Fuer Schutz und Anzeige. Sonst Rechte ueber is_manager, rang oder may_use pruefen."""
     return is_owner(cid)
 
 
-def is_verwalter(cid):
-    return cid in data["verwalter"] and cid in data["members"] and not ist_besitzer(cid)
+def is_admin(cid):
+    return cid in data["admins"] and cid in data["members"] and not ist_besitzer(cid)
+
+
+def is_inviter(cid):
+    return cid in data["inviters"] and cid in data["members"] and not ist_besitzer(cid) and not is_admin(cid)
 
 
 def is_manager(cid):
-    """Besitzer oder Verwalter: darf einladen, Einladungen widerrufen und Rollen unter sich verwalten."""
-    return ist_besitzer(cid) or is_verwalter(cid)
+    """Besitzer oder Admin: darf Rollen unter sich aendern (und alles, was ein Verwalter darf)."""
+    return ist_besitzer(cid) or is_admin(cid)
 
 
 def rang(cid):
-    """4 Besitzer, 3 Verwalter, 2 Mitglied, 1 Gast, 0 keine Rolle. Aendern darf man nur, wer einen hoeheren Rang hat."""
-    return 4 if ist_besitzer(cid) else 3 if is_verwalter(cid) else 2 if cid in data["members"] else 1 if cid in data["guests"] else 0
+    """5 Besitzer, 4 Admin, 3 Verwalter, 2 Mitglied, 1 Gast, 0 keine Rolle. Aendern darf man nur, wer einen hoeheren Rang hat."""
+    return 5 if ist_besitzer(cid) else 4 if is_admin(cid) else 3 if is_inviter(cid) else 2 if cid in data["members"] else 1 if cid in data["guests"] else 0
 
 
 def can_invite(cid):
-    return is_manager(cid)
+    """Besitzer, Admin und Verwalter: darf einladen, Einladungen widerrufen und Personen unter sich den Zugang entziehen."""
+    return is_manager(cid) or is_inviter(cid)
 
 
 def display_name(user):
@@ -923,19 +929,21 @@ def who(cid):
 
 
 def is_full(cid):
-    """Besitzer, Verwalter und Mitglieder: voller Funktionsumfang."""
+    """Besitzer, Admin, Verwalter und Mitglieder: voller Funktionsumfang."""
     return ist_besitzer(cid) or cid in data["members"]
 
 
 def may_use(cid, cmd=None, action=None):
-    """Besitzer darf alles. Verwalter alles ausser dem Betrieb (/restart). Mitglieder alles ausser Verwaltung und Betrieb.
+    """Besitzer darf alles. Admin alles ausser dem Betrieb. Mitglieder alles ausser Verwaltung und Betrieb.
     Gaeste nur Verbindungen ansehen und verfolgen."""
     if ist_besitzer(cid):
         return True
     if cmd in BETRIEB_COMMANDS or action in BETRIEB_ACTIONS:
         return False
-    if is_verwalter(cid):
+    if is_admin(cid):
         return True
+    if is_inviter(cid):
+        return action not in ROLE_ACTIONS
     if cid in data["members"]:
         return cmd not in OWNER_COMMANDS if cmd else action not in ADMIN_ACTIONS
     if cid in data["guests"]:
@@ -947,7 +955,7 @@ def may_use(cid, cmd=None, action=None):
 MENU_BUTTONS = {
     "⭐ Favoriten": "/favoriten", "🔍 Suche": "/suche", "🚏 Abfahrten": "/abfahrten", "⏱ Verspätungen": "/jetzt",
     "📌 Verfolgte Fahrten": "/tracking", "🔁 Wiederkehrend": "/wiederkehrend", "🔕 Meldungen aus": "/pause",
-    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🛠 Einstellungen": "/einstellungen", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder", "🔄 Neustart": "/restart",
+    "🔔 Meldungen an": "/weiter", "⚙️ Status": "/status", "🛠 Einstellungen": "/einstellungen", "🧹 Chat löschen": "/clear", "🕒 Auto-Löschen": "/autoclear", "👥 Mitglieder": "/mitglieder",
     "🔑 Einladen": "/code", "🎟 Code eingeben": "/code", "❓ Hilfe": "/hilfe", "🙈 Ausblenden": "/menueaus",
 }
 # Tasten, nach denen der Bot erst noch einen Text braucht (Name der Haltestelle, Code)
@@ -965,7 +973,7 @@ def menu_keyboard(cid):
         rows = [["⭐ Favoriten", "🔍 Suche"], ["🚏 Abfahrten", "⏱ Verspätungen"],
                 ["📌 Verfolgte Fahrten", "🔁 Wiederkehrend"], ["🔕 Meldungen aus", "🔔 Meldungen an"],
                 ["⚙️ Status", "🛠 Einstellungen"], ["🕒 Auto-Löschen", "🧹 Chat löschen"], ["🎟 Code eingeben"]]
-        extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if is_manager(cid) else []) + (["🔄 Neustart"] if ist_besitzer(cid) else [])
+        extra = (["🔑 Einladen"] if can_invite(cid) else []) + (["👥 Mitglieder"] if can_invite(cid) else [])
         if extra:
             rows.append(extra)
         rows.append(["❓ Hilfe", "🙈 Ausblenden"])
@@ -1201,53 +1209,6 @@ def handle_setting_input(cid, ask_cmd, text, fresh):
     send(cid, "✅ Gespeichert.\n\n" + view, reply_markup=kb)
 
 
-# ---------- Neustart (/restart) ----------
-# Einzige Betriebsfunktion ausser dem Verwalter: Besitzer und Verwalter duerfen den Bot neu starten lassen.
-# Der Bot beendet sich, Docker (restart: unless-stopped) oder systemd (Restart=always) starten ihn wieder.
-
-def cmd_restart(cid):
-    with lock:
-        if not may_use(cid, cmd="/restart"):
-            return
-        restart_pending[cid] = time.time()
-    send(cid, "\U0001f504 Bot neu starten?\n\nEr ist danach etwa eine halbe Minute nicht erreichbar. Favoriten, verfolgte Fahrten und Einstellungen bleiben.",
-         reply_markup={"inline_keyboard": [[{"text": "✅ Ja, neu starten", "callback_data": "rst:1"}, {"text": "Abbrechen", "callback_data": "rst:0"}]]})
-
-
-def restart_now():
-    """Daten sichern, offene Telegram-Updates bestaetigen (sonst kaeme dieselbe Taste nach dem Start noch einmal) und beenden."""
-    try:
-        with msg_lock:
-            stand = {str(c): [list(e) for e in l] for c, l in msg_log.items()}
-        with lock:
-            data["msglog"] = stand
-            save()
-        if poll_offset:
-            tg("getUpdates", offset=poll_offset, timeout=0)
-    except Exception as e:
-        log("Vor dem Neustart:", e)
-    log("Neustart auf Wunsch")
-    os._exit(0)
-
-
-def schedule_restart():
-    threading.Timer(1.5, restart_now).start()               # kurz warten, damit die Antwort an Telegram noch rausgeht
-
-
-def handle_restart_callback(cb, cid, mid, wert):
-    with lock:
-        if not may_use(cid, action="rst"):                   # serverseitig, nicht nur wegen des Knopfes
-            return
-        seit = restart_pending.pop(cid, 0)
-        los = wert == "1" and time.time() - seit < RESTART_ASK_TTL
-    if los:
-        answer_cb(cb, "Neustart")
-        edit_or_log(cid, mid, "\U0001f504 Der Bot startet neu und ist gleich wieder da.")
-        return schedule_restart()
-    answer_cb(cb, "Abgebrochen" if wert != "1" else "Abgelaufen")
-    edit_or_log(cid, mid, "Neustart abgebrochen." if wert != "1" else "Die Rückfrage ist abgelaufen. /restart fragt neu.")
-
-
 def autoclear_step():
     """Nachrichten loeschen, die aelter als die Einstellung des Chats sind (Standard 47 Stunden), und das Protokoll sichern.
     Die Grenze wird bei jedem Durchlauf neu gelesen, eine geaenderte Einstellung gilt deshalb sofort fuer alle gemerkten Nachrichten."""
@@ -1352,7 +1313,6 @@ def handle_message(m):
         "/code": lambda: cmd_code(cid, arg, m.get("from")),
         "/mitglieder": lambda: cmd_mitglieder(cid),
         "/einstellungen": lambda: cmd_einstellungen(cid),
-        "/restart": lambda: cmd_restart(cid),
         "/suche": lambda: cmd_suche(cid, arg),
         "/favoriten": lambda: cmd_favoriten(cid),
         "/jetzt": lambda: cmd_jetzt(cid),
@@ -1656,7 +1616,7 @@ def show_shared(cid, code, w, mid=None):
 
 
 def note_invite(by, status, wer=""):
-    """Verlauf der Einladungen ohne Codes, damit Besitzer und Verwalter den Status nachvollziehen koennen."""
+    """Verlauf der Einladungen ohne Codes, damit Besitzer und Admin den Status nachvollziehen koennen."""
     h = data.setdefault("invite_hist", [])
     h.append({"by": by, "status": status, "who": wer, "ts": int(time.time())})
     del h[:-50]
@@ -1667,7 +1627,7 @@ def make_invite(cid):
     Eine Einladung gibt nur den Mitglieder-Zugang, nie mehr."""
     if not can_invite(cid):
         raise ValueError("Keine Berechtigung.")
-    if not ist_besitzer(cid):                              # Verwalter haben nur wenige offene Codes
+    if not ist_besitzer(cid):                              # Admins und Verwalter haben nur wenige offene Codes
         offen = [c for c, i in data["invites"].items() if i["by"] == cid and i["exp"] > time.time()]
         if len(offen) >= MAX_OPEN_INVITES:
             raise ValueError(f"Du hast schon {MAX_OPEN_INVITES} offene Einladungscodes. Warte, bis sie eingelöst werden oder ablaufen.")
@@ -1696,7 +1656,7 @@ def create_invite(cid):
 def revoke_invite(actor, code):
     """Offenen Einladungscode widerrufen (Aufrufer haelt den Lock). Gibt (geklappt, Text) zurueck.
     Eigene Einladungen und die von Personen unter sich, der Besitzer alle."""
-    if not is_manager(actor):
+    if not can_invite(actor):
         return False, "Keine Berechtigung"
     inv = data["invites"].get(code)
     if not inv or inv["exp"] <= time.time():
@@ -1715,40 +1675,40 @@ def drop_invites(m):
     data["invites"] = {c: i for c, i in data["invites"].items() if i["by"] != m}
 
 
-ROLLEN = {"verwalter": "Verwalter", "mitglied": "Mitglied", "gast": "Gast"}
+ROLLEN = {"admin": "Admin", "verwalter": "Verwalter", "mitglied": "Mitglied", "gast": "Gast"}
 
 
 def people():
-    """Alle Personen ausser dem Besitzer: Mitglieder (auch Verwalter) und Gaeste."""
+    """Alle Personen ausser dem Besitzer: Mitglieder (auch Admins und Verwalter) und Gaeste."""
     return list(data["members"]) + [g for g in data["guests"] if g not in data["members"]]
 
 
 def rolle_von(m):
-    return "Besitzer" if ist_besitzer(m) else "Verwalter" if is_verwalter(m) else "Mitglied" if m in data["members"] else "Gast" if m in data["guests"] else "Keine"
+    return "Besitzer" if ist_besitzer(m) else "Admin" if is_admin(m) else "Verwalter" if is_inviter(m) else "Mitglied" if m in data["members"] else "Gast" if m in data["guests"] else "Keine"
 
 
 def can_touch(actor, m):
-    """Darf actor die Rolle von m aendern oder m entfernen? Nur wer hoeher steht, nie den Besitzer."""
-    return m is not None and is_manager(actor) and not ist_besitzer(m) and 0 < rang(m) < rang(actor)
+    """Darf actor m den Zugang entziehen (und als Admin die Rolle aendern)? Nur wer hoeher steht, nie den Besitzer."""
+    return m is not None and can_invite(actor) and not ist_besitzer(m) and 0 < rang(m) < rang(actor)
 
 
 def allowed_roles(actor, m):
-    """Rollen, auf die actor m setzen darf. Verwalter ernennt nur der Besitzer."""
-    if not can_touch(actor, m):
+    """Rollen, auf die actor m setzen darf. Admins ernennt nur der Besitzer, Verwalter aendern keine Rollen."""
+    if not is_manager(actor) or not can_touch(actor, m):
         return []
-    return ["verwalter", "mitglied", "gast"] if ist_besitzer(actor) else ["mitglied", "gast"]
+    return ["admin", "verwalter", "mitglied", "gast"] if ist_besitzer(actor) else ["verwalter", "mitglied", "gast"]
 
 
 def remove_member(actor, m):
     """Zugang einer Person entfernen (Aufrufer haelt den Lock). Gibt (geklappt, Text) zurueck.
-    Besitzer entfernt jeden ausser sich, Verwalter nur Mitglieder und Gaeste."""
-    if not is_manager(actor):
+    Besitzer entfernt jeden ausser sich, Admins alle unter sich, Verwalter nur Mitglieder und Gaeste."""
+    if not can_invite(actor):
         return False, "Keine Berechtigung"
     if m is None or ist_besitzer(m) or rang(m) == 0:
         return False, "Nicht möglich" if m is not None and ist_besitzer(m) else "Nicht mehr vorhanden"
     if not can_touch(actor, m):
         return False, "Nicht möglich"
-    for liste in ("members", "verwalter", "guests"):
+    for liste in ("members", "admins", "inviters", "guests"):
         if m in data[liste]:
             data[liste].remove(m)
     data.setdefault("invited_by", {}).pop(str(m), None)
@@ -1762,16 +1722,18 @@ def remove_member(actor, m):
 
 
 def set_role(actor, m, role):
-    """Rolle einer Person setzen: verwalter, mitglied oder gast (Aufrufer haelt den Lock).
-    Nur auf Personen unter sich, Verwalter ernennt nur der Besitzer. Es gibt keine zweite Besitzer-Rolle."""
+    """Rolle einer Person setzen: admin, inviter, mitglied oder gast (Aufrufer haelt den Lock).
+    Nur auf Personen unter sich, Admins ernennt nur der Besitzer. Es gibt keine zweite Besitzer-Rolle."""
     if not is_manager(actor):
         return False, "Keine Berechtigung"
     if role not in allowed_roles(actor, m):
         return False, "Nicht möglich"
+    for liste in ("admins", "inviters"):
+        if m in data[liste]:
+            data[liste].remove(m)
     if role == "gast":
-        for liste in ("members", "verwalter"):
-            if m in data[liste]:
-                data[liste].remove(m)
+        if m in data["members"]:
+            data["members"].remove(m)
         if m not in data["guests"]:
             data["guests"].append(m)
         drop_invites(m)
@@ -1781,10 +1743,11 @@ def set_role(actor, m, role):
             data["guests"].remove(m)
         if m not in data["members"]:
             data["members"].append(m)
-        if role == "verwalter" and m not in data["verwalter"]:
-            data["verwalter"].append(m)
-        elif role == "mitglied" and m in data["verwalter"]:
-            data["verwalter"].remove(m)
+        if role == "admin":
+            data["admins"].append(m)
+        elif role == "verwalter":
+            data["inviters"].append(m)
+        else:
             drop_invites(m)
     save()
     return True, f"Ist jetzt {ROLLEN[role]}"
@@ -1812,7 +1775,7 @@ def open_invites():
     return [(c, i) for c, i in data["invites"].items() if i["exp"] > time.time()]
 
 
-ROLLE_KURZ = {"v": "verwalter", "m": "mitglied", "g": "gast"}
+ROLLE_KURZ = {"a": "admin", "v": "verwalter", "m": "mitglied", "g": "gast"}
 
 
 def members_keyboard(viewer=None):
@@ -1823,14 +1786,15 @@ def members_keyboard(viewer=None):
     for m in people():
         if not can_touch(ich, m):
             continue
-        rows.append([{"text": f"\U0001f464 {who(m)}"[:26], "callback_data": f"md:{m}"},
-                     {"text": f"⚙️ {rolle_von(m)}", "callback_data": f"mr:{m}"},
-                     {"text": "\U0001f528", "callback_data": f"mrm:{m}"}])
+        zeile = [{"text": f"\U0001f464 {who(m)}"[:26], "callback_data": f"md:{m}"}]
+        if allowed_roles(ich, m):
+            zeile.append({"text": f"⚙️ {rolle_von(m)}", "callback_data": f"mr:{m}"})
+        rows.append(zeile + [{"text": "\U0001f528", "callback_data": f"mrm:{m}"}])
     return {"inline_keyboard": rows}
 
 
 def role_keyboard(viewer, m):
-    namen = {"verwalter": "⭐ Verwalter", "mitglied": "\U0001f642 Mitglied", "gast": "\U0001f440 Gast"}
+    namen = {"admin": "⭐ Admin", "verwalter": "\U0001f511 Verwalter", "mitglied": "\U0001f642 Mitglied", "gast": "\U0001f440 Gast"}
     kurz = {v: k for k, v in ROLLE_KURZ.items()}
     rows = [[{"text": ("✅ " if rolle_von(m).lower() == r else "") + namen[r], "callback_data": f"mr:{m}:{kurz[r]}"}] for r in allowed_roles(viewer, m)]
     rows.append([{"text": "⬅️ Zurück", "callback_data": "mm:0"}])
@@ -1842,12 +1806,12 @@ def members_text():
     zeilen += [f"• {who(m)}" + ("" if rolle_von(m) == "Mitglied" else f" ({rolle_von(m)})") +
                (f" · eingeladen von {eingeladen_von(m)}" if eingeladen_von(m) else "") for m in people()]
     return ("Personen:\n" + "\n".join(zeilen) if zeilen else "Noch niemand eingeladen.") + \
-        "\n\nName antippen für Details, ⚙️ ändert die Rolle (nur Personen unter dir), \U0001f528 wirft die Person raus (Zugang und Daten gehen weg)."
+        "\n\nName antippen für Details, ⚙️ ändert die Rolle (nur Admins, nur Personen unter dir), \U0001f528 wirft die Person raus (Zugang und Daten gehen weg)."
 
 
 def cmd_mitglieder(cid):
     with lock:
-        if not is_manager(cid):
+        if not can_invite(cid):
             return
         text, kb = members_text(), members_keyboard(cid)
     send(cid, text, reply_markup=kb)
@@ -1898,7 +1862,7 @@ def handle_member_admin_callback(cb, cid, mid, action, rest):
     """Mitgliederverwaltung per Knopf: md Details, mo offene Einladungen, mx widerrufen, mn neue Einladung, mm zurueck,
     mrm rauswerfen, mr Rolle (ohne Rolle: Auswahl zeigen). Jede Aktion prueft erneut serverseitig die Berechtigung."""
     with lock:
-        if not is_manager(cid):
+        if not can_invite(cid):
             return
         answer, view, detail, ziel = "", "members", "", None
         if action == "mrm":
@@ -2049,8 +2013,6 @@ def handle_callback(cb):
         return handle_member_admin_callback(cb, cid, mid, action, sid)
     if action == "st":
         return handle_settings_callback(cb, cid, mid, sid)
-    if action in BETRIEB_ACTIONS:
-        return handle_restart_callback(cb, cid, mid, sid)
     if action == "ac":
         return handle_autoclear_callback(cb, cid, mid, sid)
     if action == "wl":
@@ -2357,7 +2319,7 @@ def web_name(m):
 
 
 def web_members(viewer):
-    """Personen, Einladungen und Verlauf fuer die Website (Besitzer und Verwalter, Aufrufer haelt den Lock).
+    """Personen, Einladungen und Verlauf fuer die Website (Besitzer und Admin, Aufrufer haelt den Lock).
     Es gehen keine Chat-IDs raus, nur eine nicht umkehrbare Kennung. roles: Rollen, auf die der Betrachter die Person setzen darf."""
     rows = []
 
@@ -2377,7 +2339,7 @@ def web_members(viewer):
 
 def web_members_route(method, path, q, body, cid):
     with lock:
-        if not is_manager(cid):                                 # bei jeder Aktion erneut serverseitig pruefen
+        if not can_invite(cid):                                 # bei jeder Aktion erneut serverseitig pruefen
             return 403, {"error": "keine Berechtigung"}
         msg = ""
         if method == "GET" and path == "/members":
@@ -2405,6 +2367,31 @@ def web_members_route(method, path, q, body, cid):
         return 200, {**web_members(cid), "message": msg}
 
 
+avatar_cache = {}                # Chat -> (gueltig bis, Daten-Adresse oder ""), nur im Speicher
+AVATAR_TTL = 6 * 3600
+
+
+def avatar_data(cid):
+    """Telegram-Profilbild als Daten-Adresse (JPEG) fuer die Website, oder "" ohne Bild. Der Bot-Token bleibt dabei im Bot."""
+    hit = avatar_cache.get(cid)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    bild = ""
+    try:
+        fotos = tg("getUserProfilePhotos", user_id=cid, limit=1)
+        if fotos and fotos.get("total_count"):
+            wahl = min(fotos["photos"][0], key=lambda p: abs(p.get("width", 0) - 160))
+            pfad = tg("getFile", file_id=wahl["file_id"])["file_path"]
+            req = urllib.request.Request(f"https://api.telegram.org/file/bot{cfg['bot_token']}/{pfad}", headers={"User-Agent": UA})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                roh = r.read(400000)
+            bild = "data:image/jpeg;base64," + base64.b64encode(roh).decode()
+    except Exception as e:
+        log("Profilbild nicht geladen:", type(e).__name__)          # ohne Text, denn der koennte die Adresse mit Token enthalten
+    avatar_cache[cid] = (time.time() + AVATAR_TTL, bild)
+    return bild
+
+
 def web_route(method, path, q, body, auth, meta=None):
     web_cleanup()
     if method == "POST" and path == "/login/start":
@@ -2419,6 +2406,8 @@ def web_route(method, path, q, body, auth, meta=None):
             data["sessions"].pop(token, None)
             save()
         return 200, {}
+    if method == "GET" and path == "/avatar":
+        return 200, {"image": avatar_data(cid)}                  # cid aus der Sitzung, nie aus der Anfrage
     if method == "GET" and path == "/me":
         with lock:
             return 200, {"name": who(cid)}
@@ -2431,7 +2420,7 @@ def web_route(method, path, q, body, auth, meta=None):
             except ValueError as e:
                 return 400, {"error": str(e)}
         with lock:
-            return 200, {**settings_view(cid), "admin": is_manager(cid)}
+            return 200, {**settings_view(cid), "admin": can_invite(cid)}
     if path.startswith("/members"):
         return web_members_route(method, path, q, body, cid)
     if path.startswith("/favs"):
@@ -2641,7 +2630,7 @@ def main():
     migrate()
     save()
     if cfg["verwalter_id_ignoriert"]:
-        log("Hinweis: VERWALTER_ID gibt es nicht mehr. Verwalter ernennt jetzt der Besitzer im Bot (/mitglieder). Die Einstellung wird ignoriert.")
+        log("Hinweis: VERWALTER_ID gibt es nicht mehr. Admins ernennt jetzt der Besitzer im Bot (/mitglieder). Die Einstellung wird ignoriert.")
     if data["owner"] is None:
         log("WARNUNG: Kein Besitzer festgelegt. Wer dem Bot zuerst /start schreibt, wird Besitzer. BOT_OWNER_ID setzen!")
     cmds = [
@@ -2662,11 +2651,6 @@ def main():
         {"command": "status", "description": "Einstellungen"},
     ]
     tg("setMyCommands", commands=cmds)
-    if data["owner"]:                                                  # /restart steht nur in der Befehlsliste des Besitzers
-        try:
-            tg("setMyCommands", commands=cmds + [{"command": "restart", "description": "Bot neu starten"}], scope={"type": "chat", "chat_id": data["owner"]})
-        except Exception as e:
-            log("Befehlsliste fuer den Besitzer nicht gesetzt:", e)
     if cfg["api_port"]:
         cfg["bot_username"] = cfg["bot_username"] or tg("getMe")["username"]
         start_api()

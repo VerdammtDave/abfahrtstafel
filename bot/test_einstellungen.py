@@ -24,7 +24,7 @@ bot.cfg["ipv4_only"] = False
 bot.cfg["data_file"] = "test_einst.json"
 bot.cfg["bot_token"] = "123456:GEHEIM"
 
-BESITZER, VERWALTER, MITGLIED, GAST, FREMD = 1001, 2002, 3003, 4004, 5005
+BESITZER, ADMIN, MITGLIED, GAST, FREMD = 1001, 2002, 3003, 4004, 5005
 FEHLER = []
 TG, GESENDET = [], []
 
@@ -38,7 +38,7 @@ def pruefe(bedingung, text):
 def neu():
     bot.data.clear()
     bot.data.update({"owner": BESITZER, "chats": {}, "state": {}, "pending": {}, "menus": {}, "deps": {}, "guests": [GAST],
-                     "shares": {}, "members": [VERWALTER, MITGLIED], "invites": {}, "names": {}, "sessions": {}, "verwalter": [VERWALTER],
+                     "shares": {}, "members": [ADMIN, MITGLIED], "inviters": [], "invites": {}, "names": {}, "sessions": {}, "admins": [ADMIN],
                      "invited_by": {}, "msglog": {}})
     bot.msg_log.clear()
     bot.awaiting.clear()
@@ -242,7 +242,7 @@ def antworten():
 
 def test_telegram_menue():
     neu()
-    for cid in (BESITZER, VERWALTER, MITGLIED):
+    for cid in (BESITZER, ADMIN, MITGLIED):
         GESENDET.clear()
         bot.handle_message({"chat": {"id": cid}, "text": "/einstellungen", "from": {"first_name": "T"}})
         pruefe(GESENDET and "Einstellungen" in GESENDET[-1][1], f"/einstellungen antwortet {cid} nicht")
@@ -388,7 +388,7 @@ def test_web_einstellungen():
 def test_web_mitglieder():
     neu()
     bot.data["guests"] = [GAST]
-    a, v, m, g = session(BESITZER, "a"), session(VERWALTER, "v"), session(MITGLIED, "m"), session(GAST, "g")
+    a, v, m, g = session(BESITZER, "a"), session(ADMIN, "v"), session(MITGLIED, "m"), session(GAST, "g")
     for methode, pfad in (("GET", "/members"), ("POST", "/members/invite"), ("DELETE", "/members/invite"),
                           ("DELETE", "/members"), ("POST", "/members/role")):
         code, _ = web(methode, pfad, m, {"ref": "x", "role": "gast"}, {"code": ["ABCD"], "ref": ["x"]})
@@ -399,15 +399,15 @@ def test_web_mitglieder():
         pruefe(code == 401, f"ohne Anmeldung ist {methode} {pfad} erreichbar")
     code, out = web("GET", "/members", a)
     rollen = {r["role"] for r in out["members"]}
-    pruefe(code == 200 and rollen == {"Besitzer", "Verwalter", "Mitglied", "Gast"}, f"Liste der Personen unvollstaendig: {rollen}")
-    pruefe(str(VERWALTER) not in json.dumps(out) and str(MITGLIED) not in json.dumps(out) and str(GAST) not in json.dumps(out), "Chat-IDs stehen in der Antwort")
+    pruefe(code == 200 and rollen == {"Besitzer", "Admin", "Mitglied", "Gast"}, f"Liste der Personen unvollstaendig: {rollen}")
+    pruefe(str(ADMIN) not in json.dumps(out) and str(MITGLIED) not in json.dumps(out) and str(GAST) not in json.dumps(out), "Chat-IDs stehen in der Antwort")
     zeile = {r["role"]: r for r in out["members"]}
     pruefe(zeile["Besitzer"]["roles"] == [] and not zeile["Besitzer"]["removable"], "der Besitzer ist aenderbar")
-    pruefe(zeile["Verwalter"]["roles"] == ["verwalter", "mitglied", "gast"] and zeile["Gast"]["removable"], "Besitzer darf nicht alles unter sich")
+    pruefe(zeile["Admin"]["roles"] == ["admin", "verwalter", "mitglied", "gast"] and zeile["Gast"]["removable"], "Besitzer darf nicht alles unter sich")
     out_v = web("GET", "/members", v)[1]
     zv = {r["role"]: r for r in out_v["members"]}
-    pruefe(zv["Mitglied"]["roles"] == ["mitglied", "gast"] and zv["Mitglied"]["removable"], "Verwalter sieht falsche Rollenauswahl")
-    pruefe(zv["Verwalter"]["roles"] == [] and not zv["Verwalter"]["removable"] and zv["Besitzer"]["roles"] == [], "Verwalter darf sich, Verwalter oder Besitzer aendern")
+    pruefe(zv["Mitglied"]["roles"] == ["verwalter", "mitglied", "gast"] and zv["Mitglied"]["removable"], "Admin sieht falsche Rollenauswahl")
+    pruefe(zv["Admin"]["roles"] == [] and not zv["Admin"]["removable"] and zv["Besitzer"]["roles"] == [], "Admin darf sich, Admin oder Besitzer aendern")
     # Einladung: erstellen, in Liste, widerrufen, nicht mehr einloesbar
     code, out = web("POST", "/members/invite", a)
     pruefe(code == 200 and len(out["invites"]) == 1, "Einladung erstellen funktioniert nicht")
@@ -436,37 +436,37 @@ def test_web_mitglieder():
     pruefe(any(h["status"] == "abgelaufen" for h in web("GET", "/members", a)[1]["history"]), "abgelaufene Einladung fehlt im Verlauf")
     # Rollen ueber das Dropdown (POST /members/role)
     ref_m, ref_g = bot.member_ref(MITGLIED), bot.member_ref(GAST)
-    code, out = web("POST", "/members/role", a, {"ref": ref_m, "role": "verwalter"})
-    pruefe(code == 200 and bot.is_verwalter(MITGLIED) and any(r["role"] == "Verwalter" and r["name"] == bot.web_name(MITGLIED) for r in out["members"]), "Besitzer konnte keinen Verwalter ernennen")
+    code, out = web("POST", "/members/role", a, {"ref": ref_m, "role": "admin"})
+    pruefe(code == 200 and bot.is_admin(MITGLIED) and any(r["role"] == "Admin" and r["name"] == bot.web_name(MITGLIED) for r in out["members"]), "Besitzer konnte keinen Admin ernennen")
     code, _ = web("POST", "/members/role", m, {"ref": ref_g, "role": "mitglied"})
-    pruefe(code == 200 and GAST in bot.data["members"], "ein neuer Verwalter kann nicht verwalten")
-    # Verwalter: keine Ernennung, keine Aenderung an Verwaltern und Besitzer
-    for ziel in (bot.member_ref(BESITZER), bot.member_ref(VERWALTER), bot.member_ref(MITGLIED)):
-        for rolle in ("verwalter", "mitglied", "gast", "besitzer", "x", None):
+    pruefe(code == 200 and GAST in bot.data["members"], "ein neuer Admin kann nicht verwalten")
+    # Admin: keine Ernennung, keine Aenderung an Adminn und Besitzer
+    for ziel in (bot.member_ref(BESITZER), bot.member_ref(ADMIN), bot.member_ref(MITGLIED)):
+        for rolle in ("admin", "mitglied", "gast", "besitzer", "x", None):
             code, _ = web("POST", "/members/role", v, {"ref": ziel, "role": rolle})
-            pruefe(code == 400, f"Verwalter konnte {ziel} die Rolle {rolle!r} geben")
-        pruefe(web("DELETE", "/members", v, None, {"ref": [ziel]})[0] == 400, f"Verwalter konnte {ziel} entfernen")
-    pruefe(bot.data["owner"] == BESITZER and bot.is_verwalter(VERWALTER) and bot.is_verwalter(MITGLIED), "Verwalter hat Besitzer oder Verwalter veraendert")
-    code, _ = web("POST", "/members/role", v, {"ref": ref_g, "role": "verwalter"})
-    pruefe(code == 400 and not bot.is_verwalter(GAST), "Verwalter konnte jemanden zum Verwalter machen")
+            pruefe(code == 400, f"Admin konnte {ziel} die Rolle {rolle!r} geben")
+        pruefe(web("DELETE", "/members", v, None, {"ref": [ziel]})[0] == 400, f"Admin konnte {ziel} entfernen")
+    pruefe(bot.data["owner"] == BESITZER and bot.is_admin(ADMIN) and bot.is_admin(MITGLIED), "Admin hat Besitzer oder Admin veraendert")
+    code, _ = web("POST", "/members/role", v, {"ref": ref_g, "role": "admin"})
+    pruefe(code == 400 and not bot.is_admin(GAST), "Admin konnte jemanden zum Admin machen")
     # Besitzer kann niemals entfernt oder umbesetzt werden, auch nicht vom Besitzer
-    for rolle in ("verwalter", "mitglied", "gast", "besitzer"):
+    for rolle in ("admin", "mitglied", "gast", "besitzer"):
         pruefe(web("POST", "/members/role", a, {"ref": bot.member_ref(BESITZER), "role": rolle})[0] == 400, f"Besitzer bekam die Rolle {rolle}")
     pruefe(web("DELETE", "/members", a, None, {"ref": [bot.member_ref(BESITZER)]})[0] == 400, "Besitzer konnte entfernt werden")
-    # Verwalter wirft Mitglieder und Gaeste raus
+    # Admin wirft Mitglieder und Gaeste raus
     fremd_ref = bot.member_ref(FREMD)
-    pruefe(web("DELETE", "/members", v, None, {"ref": [fremd_ref]})[0] == 200 and FREMD not in bot.data["members"], "Verwalter konnte kein Mitglied rauswerfen")
+    pruefe(web("DELETE", "/members", v, None, {"ref": [fremd_ref]})[0] == 200 and FREMD not in bot.data["members"], "Admin konnte kein Mitglied rauswerfen")
     code, _ = web("POST", "/members/role", v, {"ref": ref_g, "role": "gast"})
-    pruefe(code == 200 and GAST in bot.data["guests"] and GAST not in bot.data["members"], "Verwalter konnte kein Mitglied zum Gast machen")
-    # Einladungen: Verwalter widerrufen nur eigene und die von Personen unter sich
+    pruefe(code == 200 and GAST in bot.data["guests"] and GAST not in bot.data["members"], "Admin konnte kein Mitglied zum Gast machen")
+    # Einladungen: Admin widerrufen nur eigene und die von Personen unter sich
     vcode = web("POST", "/members/invite", v)[1]["invites"][-1]["code"]
     bcode = web("POST", "/members/invite", a)[1]["invites"][-1]["code"]
-    pruefe(web("DELETE", "/members/invite", v, None, {"code": [bcode]})[0] == 400 and bcode in bot.data["invites"], "Verwalter konnte eine Einladung des Besitzers widerrufen")
-    pruefe(web("DELETE", "/members/invite", v, None, {"code": [vcode]})[0] == 200, "Verwalter konnte die eigene Einladung nicht widerrufen")
-    pruefe(web("DELETE", "/members", a, None, {"ref": [bot.member_ref(MITGLIED)]})[0] == 200 and not bot.is_full(MITGLIED), "Besitzer konnte einen Verwalter nicht entfernen")
+    pruefe(web("DELETE", "/members/invite", v, None, {"code": [bcode]})[0] == 400 and bcode in bot.data["invites"], "Admin konnte eine Einladung des Besitzers widerrufen")
+    pruefe(web("DELETE", "/members/invite", v, None, {"code": [vcode]})[0] == 200, "Admin konnte die eigene Einladung nicht widerrufen")
+    pruefe(web("DELETE", "/members", a, None, {"ref": [bot.member_ref(MITGLIED)]})[0] == 200 and not bot.is_full(MITGLIED), "Besitzer konnte einen Admin nicht entfernen")
     code, _ = web("DELETE", "/members", a, None, {"ref": ["gibtesnicht"]})
     pruefe(code == 400, "unbekannte Kennung wird nicht abgelehnt")
-    pruefe(web("GET", "/members", v)[0] == 200, "Verwalter kann die Mitgliederverwaltung nicht oeffnen")
+    pruefe(web("GET", "/members", v)[0] == 200, "Admin kann die Mitgliederverwaltung nicht oeffnen")
 
 
 def test_telegram_mitglieder():
@@ -488,8 +488,8 @@ def test_telegram_mitglieder():
     pruefe(code not in bot.data["invites"], "Widerrufen per Knopf funktioniert nicht")
     knopf(BESITZER, f"md:{MITGLIED}")
     pruefe("Mitglied" in [p for m, p in TG if m == "editMessageText"][-1]["text"], "Details werden nicht angezeigt")
-    knopf(BESITZER, f"md:{VERWALTER}")
-    pruefe("Verwalter" in [p for m, p in TG if m == "editMessageText"][-1]["text"], "Details des Verwalters fehlen")
+    knopf(BESITZER, f"md:{ADMIN}")
+    pruefe("Admin" in [p for m, p in TG if m == "editMessageText"][-1]["text"], "Details des Admins fehlen")
 
 
 def test_neustart_und_migration():
@@ -515,15 +515,15 @@ def test_neustart_und_migration():
     bot.migrate()                                                 # wiederholbar
     pruefe(bot.data["chats"]["77"] == alt, "Migration hat bestehende Daten veraendert")
     pruefe(bot.clear_hours(77) == 47 and bot.active_remind(bot.data["chats"]["77"]) == [15, 5] and not nick_von(77), "bestehende Nutzer behalten die Standardwerte nicht")
-    # frueheres Einladerecht wird zu normalem Mitglied, Rollen von Nicht-Mitgliedern verfallen
-    bot.data["members"] = [MITGLIED]
-    bot.data["inviters"] = [MITGLIED]
-    bot.data["admins"] = [MITGLIED, FREMD]                      # frueher Admin: heisst jetzt Verwalter
-    bot.data["verwalter"] = []
+    # Verwalter heissen jetzt Admins, Rollen von Nicht-Mitgliedern verfallen
+    bot.data["members"] = [MITGLIED, ADMIN]
+    bot.data["verwalter"] = [MITGLIED, FREMD]
+    bot.data["admins"] = []
+    bot.data["inviters"] = [ADMIN, FREMD]
     bot.migrate()
-    pruefe("inviters" not in bot.data and "admins" not in bot.data and bot.data["verwalter"] == [MITGLIED] and bot.data["invited_by"] == {}, "Migration der Rollen stimmt nicht")
+    pruefe("verwalter" not in bot.data and bot.data["admins"] == [MITGLIED] and bot.data["inviters"] == [ADMIN] and bot.data["invited_by"] == {}, "Migration der Rollen stimmt nicht")
     bot.migrate()
-    pruefe(bot.data["verwalter"] == [MITGLIED], "Migration ist nicht wiederholbar")
+    pruefe(bot.data["admins"] == [MITGLIED] and bot.data["inviters"] == [ADMIN], "Migration ist nicht wiederholbar")
     # kaputte gespeicherte Werte fallen auf den Standard
     bot.data["chats"]["88"] = {"autoclear_h": 1, "remind": [3, 9], "nick": "x" * 99, "favs": [], "trips": []}
     bot.migrate()
